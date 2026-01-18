@@ -47,67 +47,252 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
 
+// ============ SECTORS & GEOGRAPHIES ============
+const sectors = {
+  healthcare: { id: 'healthcare', name: 'Healthcare & MedTech', color: '#10b981', icon: '🏥' },
+  industrial: { id: 'industrial', name: 'Industrial & Manufacturing', color: '#f59e0b', icon: '🏭' },
+  technology: { id: 'technology', name: 'Technology & Software', color: '#6366f1', icon: '💻' },
+  energy: { id: 'energy', name: 'Energy & Utilities', color: '#ef4444', icon: '⚡' },
+  automotive: { id: 'automotive', name: 'Automotive & Transport', color: '#8b5cf6', icon: '🚗' }
+};
+
+const geographies = {
+  europe: { id: 'europe', name: 'Europe', countries: ['Germany', 'Netherlands', 'France', 'UK'] },
+  northAmerica: { id: 'northAmerica', name: 'North America', countries: ['USA', 'Canada'] },
+  asia: { id: 'asia', name: 'Asia Pacific', countries: ['China', 'Japan', 'South Korea'] }
+};
+
+const sectorRiskIndicators = {
+  healthcare: { europe: { score: 62, trend: -3, alerts: 4 }, northAmerica: { score: 71, trend: 1, alerts: 2 }, asia: { score: 75, trend: 2, alerts: 1 } },
+  industrial: { europe: { score: 68, trend: -5, alerts: 3 }, northAmerica: { score: 74, trend: 0, alerts: 2 }, asia: { score: 65, trend: -2, alerts: 4 } },
+  technology: { europe: { score: 78, trend: 2, alerts: 1 }, northAmerica: { score: 82, trend: 3, alerts: 1 }, asia: { score: 70, trend: -4, alerts: 3 } },
+  energy: { europe: { score: 55, trend: -8, alerts: 6 }, northAmerica: { score: 68, trend: 1, alerts: 3 }, asia: { score: 60, trend: -3, alerts: 4 } },
+  automotive: { europe: { score: 58, trend: -6, alerts: 5 }, northAmerica: { score: 65, trend: -2, alerts: 3 }, asia: { score: 72, trend: 4, alerts: 2 } }
+};
+
+// ============ SUPPLY CHAIN DATA ============
+const supplyChainData = {
+  philips: {
+    tier1: [
+      { name: 'TSMC', location: 'Taiwan', category: 'Semiconductors', risk: 'Medium', dependency: 35 },
+      { name: 'Flex Ltd', location: 'Singapore', category: 'Contract Manufacturing', risk: 'Low', dependency: 25 },
+      { name: 'Jabil Inc', location: 'USA', category: 'Electronics Assembly', risk: 'Low', dependency: 20 }
+    ],
+    risks: [
+      { type: 'Geopolitical', desc: 'Taiwan semiconductor exposure amid US-China tensions', severity: 'High' },
+      { type: 'Logistics', desc: 'Red Sea shipping disruptions affecting component delivery', severity: 'Medium' },
+      { type: 'Single Source', desc: 'Critical imaging sensors from single supplier', severity: 'Medium' }
+    ],
+    concentration: { asia: 55, europe: 25, northAmerica: 20 }
+  },
+  siemens: {
+    tier1: [
+      { name: 'Infineon', location: 'Germany', category: 'Power Semiconductors', risk: 'Low', dependency: 20 },
+      { name: 'NVIDIA', location: 'USA', category: 'AI Chips & Software', risk: 'Low', dependency: 15 },
+      { name: 'Bosch', location: 'Germany', category: 'Sensors & Components', risk: 'Low', dependency: 18 }
+    ],
+    risks: [
+      { type: 'Energy Costs', desc: 'European energy price volatility affecting manufacturing', severity: 'Medium' },
+      { type: 'Rare Earth', desc: 'China dependency for rare earth materials in motors', severity: 'High' },
+      { type: 'Labor', desc: 'Skilled labor shortage in German manufacturing', severity: 'Low' }
+    ],
+    concentration: { asia: 30, europe: 50, northAmerica: 20 }
+  },
+  basf: {
+    tier1: [
+      { name: 'Linde', location: 'Germany', category: 'Industrial Gases', risk: 'Low', dependency: 22 },
+      { name: 'Shell', location: 'Netherlands', category: 'Petrochemicals', risk: 'Medium', dependency: 28 },
+      { name: 'Sinopec', location: 'China', category: 'Raw Materials', risk: 'High', dependency: 18 }
+    ],
+    risks: [
+      { type: 'Energy', desc: 'Natural gas dependency for European operations', severity: 'High' },
+      { type: 'Regulatory', desc: 'EU chemical regulations increasing compliance costs', severity: 'Medium' },
+      { type: 'Climate', desc: 'Rhine water levels affecting barge transport', severity: 'Medium' }
+    ],
+    concentration: { asia: 35, europe: 45, northAmerica: 20 }
+  },
+  toyota: {
+    tier1: [
+      { name: 'Denso', location: 'Japan', category: 'Auto Electronics', risk: 'Low', dependency: 30 },
+      { name: 'Panasonic', location: 'Japan', category: 'EV Batteries', risk: 'Medium', dependency: 25 },
+      { name: 'Aisin', location: 'Japan', category: 'Drivetrain Components', risk: 'Low', dependency: 20 }
+    ],
+    risks: [
+      { type: 'Battery Supply', desc: 'Lithium and cobalt sourcing for EV production', severity: 'High' },
+      { type: 'Chip Shortage', desc: 'Ongoing semiconductor supply constraints', severity: 'Medium' },
+      { type: 'Yen Volatility', desc: 'Currency fluctuations affecting export competitiveness', severity: 'Medium' }
+    ],
+    concentration: { asia: 65, europe: 15, northAmerica: 20 }
+  },
+  shell: {
+    tier1: [
+      { name: 'Schlumberger', location: 'USA', category: 'Oilfield Services', risk: 'Low', dependency: 20 },
+      { name: 'TechnipFMC', location: 'UK', category: 'Subsea Equipment', risk: 'Low', dependency: 15 },
+      { name: 'Halliburton', location: 'USA', category: 'Drilling Services', risk: 'Low', dependency: 18 }
+    ],
+    risks: [
+      { type: 'Transition Risk', desc: 'Stranded asset risk from energy transition', severity: 'High' },
+      { type: 'Geopolitical', desc: 'Operations in politically unstable regions', severity: 'High' },
+      { type: 'Carbon Price', desc: 'Rising carbon costs in European operations', severity: 'Medium' }
+    ],
+    concentration: { asia: 25, europe: 40, northAmerica: 35 }
+  },
+  sap: {
+    tier1: [
+      { name: 'AWS', location: 'USA', category: 'Cloud Infrastructure', risk: 'Low', dependency: 30 },
+      { name: 'Microsoft Azure', location: 'USA', category: 'Cloud Infrastructure', risk: 'Low', dependency: 25 },
+      { name: 'Google Cloud', location: 'USA', category: 'AI/ML Services', risk: 'Low', dependency: 15 }
+    ],
+    risks: [
+      { type: 'Cloud Concentration', desc: 'Heavy reliance on US hyperscalers', severity: 'Medium' },
+      { type: 'Talent', desc: 'Competition for AI/ML engineering talent', severity: 'Medium' },
+      { type: 'Data Sovereignty', desc: 'EU data localization requirements', severity: 'Low' }
+    ],
+    concentration: { asia: 15, europe: 35, northAmerica: 50 }
+  }
+};
+
 // ============ MOCK DATA ============
 const companies = {
   philips: {
-    id: 'philips', name: 'Philips', sector: 'Health Technology (Simulated)', currency: 'EUR', ticker: 'PHIA (Simulated)',
-    startingRiskScore: 58, startingPrice: 23.5, riskTone: 'analyst/margin',
+    id: 'philips', name: 'Philips', sector: 'healthcare', geography: 'europe', country: 'Netherlands', currency: 'EUR', ticker: 'PHIA',
+    startingRiskScore: 58, startingPrice: 23.5, riskTone: 'analyst/margin', exposure: 2.8,
     financials: { revenue: 18.1, revenueChange: -2.3, ebitdaMargin: 11.2, ebitdaChange: -0.8, netDebtEbitda: 2.8, interestCoverage: 4.2, liquidityRunway: 18, rating: 'BBB', outlook: 'Negative' },
     thresholds: { netDebtEbitda: 3.0, interestCoverage: 3.5, sentimentFloor: -0.4 },
     seededNews: [
       { id: 'n1', headline: 'Zacks Research downgrades Philips stock from Hold to Strong Sell', source: 'MarketBeat', sentiment: -0.7, tag: 'Earnings', time: Date.now() - 3600000 },
       { id: 'n2', headline: 'RBC Capital initiates Philips with Sector Perform rating, EUR 25 target', source: 'Investing.com', sentiment: -0.2, tag: 'Earnings', time: Date.now() - 7200000 },
       { id: 'n3', headline: 'Philips 2026 OLED TVs to support Dolby Vision 2 HDR - feature LG models lack', source: 'What Hi-Fi', sentiment: 0.6, tag: 'Product', time: Date.now() - 10800000 },
-      { id: 'n4', headline: 'Philips to release 2026 outlook on February 10, expects sequential improvement', source: 'GlobeNewswire', sentiment: 0.3, tag: 'Earnings', time: Date.now() - 14400000 },
-      { id: 'n5', headline: 'Philips achieves 100% EcoDesigned new product introductions in 2024', source: 'Philips Press', sentiment: 0.5, tag: 'ESG', time: Date.now() - 18000000 },
-      { id: 'n6', headline: 'Philips circular revenue grows to 24% of total revenue', source: 'Philips Press', sentiment: 0.4, tag: 'ESG', time: Date.now() - 21600000 }
+      { id: 'n4', headline: 'Philips to release 2026 outlook on February 10, expects sequential improvement', source: 'GlobeNewswire', sentiment: 0.3, tag: 'Earnings', time: Date.now() - 14400000 }
     ],
     seededAlerts: [
-      { id: 'a1', severity: 'High', category: 'Market', title: 'Analyst Downgrade Alert', summary: 'Zacks Research downgraded Philips from Hold to Strong Sell on Jan 16', reasoning: 'Multiple analyst downgrades often precede price weakness and may signal fundamental concerns', time: Date.now() - 1800000, ack: false },
-      { id: 'a2', severity: 'Medium', category: 'Financial', title: 'Margin Pressure Warning', summary: 'Tariff headwinds expected to impact margins despite sales improvement', reasoning: 'Cost pressures without pricing power can erode profitability', time: Date.now() - 5400000, ack: false },
-      { id: 'a3', severity: 'Low', category: 'ESG', title: 'Upcoming Outlook Release', summary: 'Philips 2026 outlook scheduled for February 10 - key catalyst', reasoning: 'Major announcements create event risk and volatility potential', time: Date.now() - 9000000, ack: false }
+      { id: 'a1', severity: 'High', category: 'Market', title: 'Analyst Downgrade Alert', summary: 'Zacks Research downgraded Philips from Hold to Strong Sell', reasoning: 'Multiple analyst downgrades often precede price weakness', time: Date.now() - 1800000, ack: false },
+      { id: 'a2', severity: 'Medium', category: 'Financial', title: 'Margin Pressure Warning', summary: 'Tariff headwinds expected to impact margins', reasoning: 'Cost pressures can erode profitability', time: Date.now() - 5400000, ack: false }
     ]
   },
   siemens: {
-    id: 'siemens', name: 'Siemens', sector: 'Industrial Technology (Simulated)', currency: 'EUR', ticker: 'SIE (Simulated)',
-    startingRiskScore: 85, startingPrice: 198.0, riskTone: 'macro/supply-chain',
+    id: 'siemens', name: 'Siemens', sector: 'industrial', geography: 'europe', country: 'Germany', currency: 'EUR', ticker: 'SIE',
+    startingRiskScore: 85, startingPrice: 198.0, riskTone: 'macro/supply-chain', exposure: 5.2,
     financials: { revenue: 78.9, revenueChange: 6.0, ebitdaMargin: 15.0, ebitdaChange: 0.8, netDebtEbitda: 1.2, interestCoverage: 9.5, liquidityRunway: 28, rating: 'A+', outlook: 'Positive' },
     thresholds: { netDebtEbitda: 2.5, interestCoverage: 5.0, sentimentFloor: -0.35 },
     seededNews: [
-      { id: 'n1', headline: 'Siemens acquires ASTER Technologies to boost PCB test verification capabilities', source: 'Siemens News', sentiment: 0.6, tag: 'Product', time: Date.now() - 2400000 },
-      { id: 'n2', headline: 'Siemens and NVIDIA expand partnership to develop Industrial AI Operating System', source: 'NVIDIA News', sentiment: 0.8, tag: 'Product', time: Date.now() - 6000000 },
-      { id: 'n3', headline: 'Siemens unveils Digital Twin Composer and 9 new industrial copilots at CES 2026', source: 'Siemens News', sentiment: 0.7, tag: 'Product', time: Date.now() - 9000000 },
-      { id: 'n4', headline: 'Siemens posts record FY2025: €78.9B revenue, €10.4B net income, €10.8B free cash flow', source: 'Industrial Production', sentiment: 0.9, tag: 'Earnings', time: Date.now() - 12000000 },
-      { id: 'n5', headline: 'Siemens raises medium-term revenue growth ambition to 6-9%', source: 'Industrial Production', sentiment: 0.7, tag: 'Earnings', time: Date.now() - 15000000 },
-      { id: 'n6', headline: 'Siemens Erlangen factory to become first AI-driven adaptive manufacturing site in 2026', source: 'NVIDIA News', sentiment: 0.6, tag: 'Operational', time: Date.now() - 18000000 }
+      { id: 'n1', headline: 'Siemens acquires ASTER Technologies to boost PCB test verification', source: 'Siemens News', sentiment: 0.6, tag: 'Product', time: Date.now() - 2400000 },
+      { id: 'n2', headline: 'Siemens and NVIDIA expand partnership for Industrial AI OS', source: 'NVIDIA News', sentiment: 0.8, tag: 'Product', time: Date.now() - 6000000 },
+      { id: 'n3', headline: 'Siemens posts record FY2025: €78.9B revenue, €10.4B net income', source: 'Industrial Production', sentiment: 0.9, tag: 'Earnings', time: Date.now() - 12000000 }
     ],
     seededAlerts: [
-      { id: 'a1', severity: 'Low', category: 'Operational', title: 'Acquisition Integration Risk', summary: 'ASTER Technologies acquisition requires integration into Xcelerator portfolio', reasoning: 'M&A integration can distract management and incur unexpected costs', time: Date.now() - 3000000, ack: false },
-      { id: 'a2', severity: 'Low', category: 'Market', title: 'Record Valuation Alert', summary: 'Strong FY2025 results (€78.9B revenue) may be priced into stock', reasoning: 'Exceptional results create high expectations that are difficult to sustain', time: Date.now() - 7200000, ack: false },
-      { id: 'a3', severity: 'Medium', category: 'Macro', title: 'German Manufacturing PMI Watch', summary: 'European industrial indicators showing mixed signals', reasoning: 'Siemens revenue heavily exposed to European industrial cycle', time: Date.now() - 10800000, ack: false }
+      { id: 'a1', severity: 'Low', category: 'Operational', title: 'Acquisition Integration Risk', summary: 'ASTER Technologies requires integration', reasoning: 'M&A can distract management', time: Date.now() - 3000000, ack: false },
+      { id: 'a2', severity: 'Medium', category: 'Macro', title: 'German Manufacturing PMI Watch', summary: 'European industrial indicators mixed', reasoning: 'Revenue exposed to European cycle', time: Date.now() - 10800000, ack: false }
+    ]
+  },
+  basf: {
+    id: 'basf', name: 'BASF', sector: 'industrial', geography: 'europe', country: 'Germany', currency: 'EUR', ticker: 'BAS',
+    startingRiskScore: 52, startingPrice: 42.8, riskTone: 'energy/regulatory', exposure: 3.5,
+    financials: { revenue: 68.9, revenueChange: -4.2, ebitdaMargin: 9.8, ebitdaChange: -1.5, netDebtEbitda: 2.4, interestCoverage: 5.1, liquidityRunway: 15, rating: 'A-', outlook: 'Negative' },
+    thresholds: { netDebtEbitda: 3.0, interestCoverage: 4.0, sentimentFloor: -0.4 },
+    seededNews: [
+      { id: 'n1', headline: 'BASF announces further cost cuts amid energy crisis impact', source: 'Reuters', sentiment: -0.5, tag: 'Operational', time: Date.now() - 3600000 },
+      { id: 'n2', headline: 'European chemical sector faces structural headwinds', source: 'FT', sentiment: -0.4, tag: 'Macro', time: Date.now() - 7200000 }
+    ],
+    seededAlerts: [
+      { id: 'a1', severity: 'High', category: 'Macro', title: 'Energy Cost Pressure', summary: 'Gas prices remain elevated for European operations', reasoning: 'Energy-intensive production at risk', time: Date.now() - 2000000, ack: false }
+    ]
+  },
+  toyota: {
+    id: 'toyota', name: 'Toyota', sector: 'automotive', geography: 'asia', country: 'Japan', currency: 'JPY', ticker: 'TM',
+    startingRiskScore: 78, startingPrice: 2850, riskTone: 'ev-transition', exposure: 4.1,
+    financials: { revenue: 45200, revenueChange: 8.2, ebitdaMargin: 12.5, ebitdaChange: 0.5, netDebtEbitda: 0.8, interestCoverage: 15.2, liquidityRunway: 36, rating: 'AA-', outlook: 'Stable' },
+    thresholds: { netDebtEbitda: 2.0, interestCoverage: 8.0, sentimentFloor: -0.3 },
+    seededNews: [
+      { id: 'n1', headline: 'Toyota accelerates solid-state battery development timeline', source: 'Nikkei', sentiment: 0.7, tag: 'Product', time: Date.now() - 4000000 },
+      { id: 'n2', headline: 'Japan auto exports hit record on weak yen', source: 'Bloomberg', sentiment: 0.5, tag: 'Earnings', time: Date.now() - 8000000 }
+    ],
+    seededAlerts: [
+      { id: 'a1', severity: 'Medium', category: 'Market', title: 'EV Market Share Concern', summary: 'BEV market share trails competitors', reasoning: 'EV transition timing risk', time: Date.now() - 5000000, ack: false }
+    ]
+  },
+  shell: {
+    id: 'shell', name: 'Shell', sector: 'energy', geography: 'europe', country: 'UK', currency: 'GBP', ticker: 'SHEL',
+    startingRiskScore: 62, startingPrice: 25.4, riskTone: 'transition/geopolitical', exposure: 6.8,
+    financials: { revenue: 316.6, revenueChange: -12.5, ebitdaMargin: 8.2, ebitdaChange: -2.1, netDebtEbitda: 1.1, interestCoverage: 12.8, liquidityRunway: 24, rating: 'A+', outlook: 'Stable' },
+    thresholds: { netDebtEbitda: 2.0, interestCoverage: 6.0, sentimentFloor: -0.5 },
+    seededNews: [
+      { id: 'n1', headline: 'Shell scales back renewable energy targets', source: 'FT', sentiment: -0.3, tag: 'ESG', time: Date.now() - 5000000 },
+      { id: 'n2', headline: 'Oil prices stabilize amid OPEC+ production cuts', source: 'Reuters', sentiment: 0.2, tag: 'Macro', time: Date.now() - 9000000 }
+    ],
+    seededAlerts: [
+      { id: 'a1', severity: 'High', category: 'ESG', title: 'Transition Risk Alert', summary: 'Stranded asset concerns from energy transition', reasoning: 'Long-term value at risk from decarbonization', time: Date.now() - 3500000, ack: false }
+    ]
+  },
+  sap: {
+    id: 'sap', name: 'SAP', sector: 'technology', geography: 'europe', country: 'Germany', currency: 'EUR', ticker: 'SAP',
+    startingRiskScore: 82, startingPrice: 236.5, riskTone: 'cloud-transition', exposure: 2.4,
+    financials: { revenue: 34.2, revenueChange: 9.5, ebitdaMargin: 22.8, ebitdaChange: 2.1, netDebtEbitda: 0.9, interestCoverage: 18.5, liquidityRunway: 32, rating: 'A', outlook: 'Positive' },
+    thresholds: { netDebtEbitda: 2.0, interestCoverage: 10.0, sentimentFloor: -0.3 },
+    seededNews: [
+      { id: 'n1', headline: 'SAP cloud revenue growth accelerates to 25% YoY', source: 'SAP News', sentiment: 0.8, tag: 'Earnings', time: Date.now() - 3000000 },
+      { id: 'n2', headline: 'SAP Business AI adoption exceeds expectations', source: 'TechCrunch', sentiment: 0.7, tag: 'Product', time: Date.now() - 7000000 }
+    ],
+    seededAlerts: [
+      { id: 'a1', severity: 'Low', category: 'Operational', title: 'Cloud Migration Pace', summary: 'Customer migration timeline risk', reasoning: 'On-prem to cloud transition execution', time: Date.now() - 6000000, ack: false }
     ]
   }
 };
 
 const newsTemplates = {
   philips: [
-    { t: 'Analysts express concerns over Philips execution risks and margin pressure', s: -0.5, tag: 'Earnings' },
-    { t: 'Philips faces tariff headwinds affecting healthcare equipment margins', s: -0.4, tag: 'Macro' },
-    { t: 'Healthcare sector competition intensifies from LG and Samsung', s: -0.3, tag: 'Product' },
-    { t: 'Philips BlueSeal helium-free MRI technology gains hospital adoption', s: 0.6, tag: 'Product' },
-    { t: 'Philips MiraVision Pro software receives positive industry reviews', s: 0.5, tag: 'Product' },
-    { t: 'Investors await Philips February 10 outlook for growth clarity', s: 0.1, tag: 'Earnings' },
-    { t: 'Philips sustainability initiatives drive ESG fund interest', s: 0.4, tag: 'ESG' }
+    { t: 'Analysts express concerns over Philips execution risks', s: -0.5, tag: 'Earnings' },
+    { t: 'Philips BlueSeal MRI technology gains adoption', s: 0.6, tag: 'Product' }
   ],
   siemens: [
-    { t: 'European industrial orders show mixed signals amid macro uncertainty', s: -0.3, tag: 'Macro' },
-    { t: 'Siemens faces integration challenges with recent acquisitions', s: -0.2, tag: 'Operational' },
-    { t: 'Germany manufacturing PMI signals potential slowdown', s: -0.4, tag: 'Macro' },
-    { t: 'Siemens industrial copilots see strong enterprise adoption', s: 0.7, tag: 'Product' },
-    { t: 'PepsiCo expands digital twin deployment with Siemens technology', s: 0.6, tag: 'Product' },
-    { t: 'Siemens-NVIDIA partnership attracts new industrial AI customers', s: 0.7, tag: 'Product' },
-    { t: 'Siemens order book remains robust with 6% YoY growth', s: 0.5, tag: 'Earnings' }
+    { t: 'European industrial orders show mixed signals', s: -0.3, tag: 'Macro' },
+    { t: 'Siemens industrial copilots see strong adoption', s: 0.7, tag: 'Product' }
+  ],
+  basf: [
+    { t: 'European chemical demand remains weak', s: -0.4, tag: 'Macro' },
+    { t: 'BASF invests in battery materials capacity', s: 0.5, tag: 'Product' }
+  ],
+  toyota: [
+    { t: 'EV competition intensifies in key markets', s: -0.3, tag: 'Market' },
+    { t: 'Toyota hybrid sales reach new record', s: 0.6, tag: 'Earnings' }
+  ],
+  shell: [
+    { t: 'Oil price volatility impacts energy sector', s: -0.3, tag: 'Macro' },
+    { t: 'Shell LNG exports exceed expectations', s: 0.5, tag: 'Earnings' }
+  ],
+  sap: [
+    { t: 'Enterprise software competition heats up', s: -0.2, tag: 'Market' },
+    { t: 'SAP AI features drive customer upgrades', s: 0.7, tag: 'Product' }
   ]
+};
+
+// ============ SECTOR ANALYSIS BEST PRACTICES ============
+const sectorBestPractices = {
+  healthcare: {
+    kpis: ['R&D Pipeline Value', 'Regulatory Approval Rate', 'Patent Expiry Exposure', 'Reimbursement Risk'],
+    watchList: ['FDA/EMA approval delays', 'Pricing pressure from governments', 'Clinical trial failures', 'Product recalls'],
+    methodology: 'Healthcare sector analysis focuses on pipeline valuation, regulatory pathway assessment, and reimbursement landscape monitoring.'
+  },
+  industrial: {
+    kpis: ['Order Book Coverage', 'Capacity Utilization', 'Input Cost Sensitivity', 'Automation Investment'],
+    watchList: ['PMI trends by region', 'Energy cost spikes', 'Supply chain disruptions', 'Labor shortages'],
+    methodology: 'Industrial sector analysis emphasizes cyclical indicators, operational leverage, and supply chain resilience.'
+  },
+  technology: {
+    kpis: ['ARR Growth', 'Net Revenue Retention', 'R&D Intensity', 'Cloud Transition Progress'],
+    watchList: ['Customer churn signals', 'Competitive displacement', 'Talent attrition', 'Cybersecurity incidents'],
+    methodology: 'Technology sector analysis prioritizes recurring revenue quality, competitive moat, and innovation velocity.'
+  },
+  energy: {
+    kpis: ['Reserve Replacement Ratio', 'Carbon Intensity', 'Transition CapEx %', 'Break-even Oil Price'],
+    watchList: ['Stranded asset risk', 'Regulatory changes', 'ESG-driven divestment', 'Commodity price swings'],
+    methodology: 'Energy sector analysis balances traditional metrics with transition risk assessment and ESG factors.'
+  },
+  automotive: {
+    kpis: ['EV Mix %', 'Platform Efficiency', 'Battery Cost Trend', 'Software Revenue %'],
+    watchList: ['EV adoption pace', 'Battery supply constraints', 'Autonomous driving progress', 'New entrant disruption'],
+    methodology: 'Automotive sector analysis tracks electrification progress, software capabilities, and supply chain security.'
+  }
 };
 
 // ============ CONTEXT ============
@@ -595,6 +780,8 @@ function App() {
   // Render current page
   const renderPage = () => {
     if (loading) return <LoadingPage />;
+    if (route === '#/sectors') return <SectorAnalysisPage />;
+    if (route === '#/supply-chain') return <SupplyChainPage />;
     if (route.startsWith('#/company/') && route.includes('/alerts')) return <AlertsPage />;
     if (route.startsWith('#/company/') && route.includes('/news')) return <NewsPage />;
     if (route.startsWith('#/company/') && route.includes('/financials')) return <FinancialsPage />;
@@ -602,7 +789,7 @@ function App() {
     if (route.startsWith('#/company/')) return <DashboardPage />;
     if (route === '#/portfolio') return <PortfolioPage />;
     if (route === '#/settings') return <SettingsPage />;
-    return <DashboardPage />;
+    return <PortfolioPage />;
   };
 
   return (
@@ -647,8 +834,9 @@ function TopBar({ onCopilotOpen, onCompanyChange, searchQuery, setSearchQuery, l
           onChange={e => onCompanyChange(e.target.value)}
           className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent-500"
         >
-          <option value="philips">Philips</option>
-          <option value="siemens">Siemens</option>
+          {Object.values(companies).map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
         </select>
         <span className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 rounded">REAL NEWS • SIMULATED PRICES</span>
       </div>
@@ -679,12 +867,14 @@ function TopBar({ onCopilotOpen, onCompanyChange, searchQuery, setSearchQuery, l
 function Sidebar({ currentRoute }) {
   const { companyId, navigate } = useContext(AppContext);
   const items = [
-    { icon: '📊', label: 'Dashboard', route: `#/company/${companyId}` },
+    { icon: '📁', label: 'Portfolio', route: '#/portfolio' },
+    { icon: '🌍', label: 'Sector Analysis', route: '#/sectors' },
+    { icon: '🔗', label: 'Supply Chain', route: '#/supply-chain' },
+    { icon: '📊', label: 'Company View', route: `#/company/${companyId}` },
     { icon: '🚨', label: 'Alerts', route: `#/company/${companyId}/alerts` },
     { icon: '📰', label: 'News & Sentiment', route: `#/company/${companyId}/news` },
     { icon: '💰', label: 'Financials', route: `#/company/${companyId}/financials` },
     { icon: '🧠', label: 'Model & Explain', route: `#/company/${companyId}/model` },
-    { icon: '📁', label: 'Portfolio', route: '#/portfolio' },
     { icon: '⚙️', label: 'Settings', route: '#/settings' }
   ];
   return (
@@ -1301,40 +1491,338 @@ function ModelPage() {
 function PortfolioPage() {
   const ctx = useContext(AppContext);
   const { navigate, alertsState = {}, riskScores = {} } = ctx;
+  const [filterSector, setFilterSector] = useState('all');
+  const [filterGeo, setFilterGeo] = useState('all');
+  const [sortBy, setSortBy] = useState('risk');
 
   const borrowers = Object.values(companies).map(c => ({
     ...c,
     score: riskScores[c.id]?.score ?? c.startingRiskScore,
-    lastAlert: (alertsState[c.id] || [])[0]
+    lastAlert: (alertsState[c.id] || [])[0],
+    alertCount: (alertsState[c.id] || []).filter(a => !a.ack).length
   }));
+
+  let filtered = borrowers;
+  if (filterSector !== 'all') filtered = filtered.filter(b => b.sector === filterSector);
+  if (filterGeo !== 'all') filtered = filtered.filter(b => b.geography === filterGeo);
+  if (sortBy === 'risk') filtered.sort((a, b) => a.score - b.score);
+  if (sortBy === 'exposure') filtered.sort((a, b) => b.exposure - a.exposure);
+  if (sortBy === 'alerts') filtered.sort((a, b) => b.alertCount - a.alertCount);
+
+  const totalExposure = borrowers.reduce((sum, b) => sum + b.exposure, 0);
+  const avgRisk = Math.round(borrowers.reduce((sum, b) => sum + b.score, 0) / borrowers.length);
+  const totalAlerts = borrowers.reduce((sum, b) => sum + b.alertCount, 0);
+  const highRiskCount = borrowers.filter(b => b.score < 60).length;
 
   return (
     <div className="space-y-6 fade-in">
-      <h2 className="text-2xl font-bold">Portfolio Overview</h2>
-      <p className="text-gray-400">Monitor all borrowers in your portfolio</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h2 className="text-2xl font-bold">Portfolio Overview</h2>
+          <p className="text-gray-400">Global Bank Credit Portfolio - Head of Risk View</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => navigate('#/sectors')} className="px-4 py-2 glass glass-hover rounded-lg text-sm">Sector Analysis →</button>
+          <button onClick={() => navigate('#/supply-chain')} className="px-4 py-2 glass glass-hover rounded-lg text-sm">Supply Chain →</button>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-2 gap-6">
-        {borrowers.map(b => (
-          <div key={b.id} className="glass rounded-xl p-6 hover:bg-white/5 transition cursor-pointer" onClick={() => navigate(`#/company/${b.id}`)}>
-            <div className="flex justify-between items-start mb-4">
+      {/* Portfolio Summary */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="glass rounded-xl p-4 text-center">
+          <p className="text-gray-400 text-sm">Total Exposure</p>
+          <p className="text-2xl font-bold text-accent-400">€{totalExposure.toFixed(1)}B</p>
+        </div>
+        <div className="glass rounded-xl p-4 text-center">
+          <p className="text-gray-400 text-sm">Avg Risk Score</p>
+          <p className={`text-2xl font-bold ${avgRisk >= 70 ? 'text-green-400' : avgRisk >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{avgRisk}</p>
+        </div>
+        <div className="glass rounded-xl p-4 text-center">
+          <p className="text-gray-400 text-sm">Active Alerts</p>
+          <p className="text-2xl font-bold text-orange-400">{totalAlerts}</p>
+        </div>
+        <div className="glass rounded-xl p-4 text-center">
+          <p className="text-gray-400 text-sm">High Risk Borrowers</p>
+          <p className="text-2xl font-bold text-red-400">{highRiskCount}</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-4 flex-wrap">
+        <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All Sectors</option>
+          {Object.values(sectors).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={filterGeo} onChange={e => setFilterGeo(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All Geographies</option>
+          {Object.values(geographies).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="risk">Sort by Risk (Low→High)</option>
+          <option value="exposure">Sort by Exposure</option>
+          <option value="alerts">Sort by Alerts</option>
+        </select>
+      </div>
+
+      {/* Borrower Cards */}
+      <div className="grid grid-cols-3 gap-4">
+        {filtered.map(b => (
+          <div key={b.id} className="glass rounded-xl p-5 hover:bg-white/5 transition cursor-pointer" onClick={() => navigate(`#/company/${b.id}`)}>
+            <div className="flex justify-between items-start mb-3">
               <div>
-                <h3 className="text-xl font-bold">{b.name}</h3>
-                <p className="text-sm text-gray-400">{b.sector}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{sectors[b.sector]?.icon}</span>
+                  <h3 className="font-bold">{b.name}</h3>
+                </div>
+                <p className="text-xs text-gray-500">{b.country} • {sectors[b.sector]?.name}</p>
               </div>
               <div className="text-right">
-                <p className={`text-3xl font-bold ${b.score >= 70 ? 'text-green-400' : b.score >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>{b.score}</p>
-                <p className="text-xs text-gray-500">Risk Score</p>
+                <p className={`text-2xl font-bold ${b.score >= 70 ? 'text-green-400' : b.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{b.score}</p>
               </div>
             </div>
-            {b.lastAlert && (
-              <div className="p-3 bg-white/5 rounded-lg">
-                <p className="text-xs text-gray-500">Latest Alert ({formatTime(b.lastAlert.time)})</p>
-                <p className="text-sm font-medium">{b.lastAlert.title}</p>
+            <div className="flex justify-between text-xs text-gray-400 mb-2">
+              <span>Exposure: €{b.exposure}B</span>
+              <span>Rating: {b.financials.rating}</span>
+            </div>
+            {b.alertCount > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-red-500/10 rounded text-xs text-red-400">
+                <span>🚨</span>
+                <span>{b.alertCount} active alert{b.alertCount > 1 ? 's' : ''}</span>
               </div>
             )}
-            <button className="mt-4 w-full py-2 glass glass-hover rounded-lg text-sm">Open Dashboard →</button>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ============ SECTOR ANALYSIS PAGE ============
+function SectorAnalysisPage() {
+  const { navigate } = useContext(AppContext);
+  const [selectedSector, setSelectedSector] = useState('healthcare');
+  const [detailModal, setDetailModal] = useState(null);
+
+  const sector = sectors[selectedSector];
+  const practices = sectorBestPractices[selectedSector];
+  const geoData = sectorRiskIndicators[selectedSector];
+
+  const sectorCompanies = Object.values(companies).filter(c => c.sector === selectedSector);
+
+  return (
+    <div className="space-y-6 fade-in">
+      <div className="flex justify-between items-start">
+        <div>
+          <h2 className="text-2xl font-bold">Sector Analysis</h2>
+          <p className="text-gray-400">Geographic risk distribution and sector-specific monitoring</p>
+        </div>
+      </div>
+
+      {/* Sector Selector */}
+      <div className="flex gap-2">
+        {Object.values(sectors).map(s => (
+          <button key={s.id} onClick={() => setSelectedSector(s.id)}
+            className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition ${selectedSector === s.id ? 'bg-accent-500' : 'glass glass-hover'}`}>
+            <span>{s.icon}</span> {s.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Geographic Risk Matrix */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">{sector.icon} {sector.name} - Geographic Risk Matrix</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {Object.entries(geographies).map(([geoId, geo]) => {
+            const data = geoData[geoId];
+            return (
+              <div key={geoId} className="p-4 bg-white/5 rounded-lg">
+                <div className="flex justify-between items-start mb-3">
+                  <h4 className="font-medium">{geo.name}</h4>
+                  <span className={`text-2xl font-bold ${data.score >= 70 ? 'text-green-400' : data.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {data.score}
+                  </span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Trend</span>
+                    <span className={data.trend >= 0 ? 'text-green-400' : 'text-red-400'}>{data.trend >= 0 ? '↑' : '↓'} {Math.abs(data.trend)}pts</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Active Alerts</span>
+                    <span className={data.alerts > 3 ? 'text-red-400' : 'text-gray-300'}>{data.alerts}</span>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className={`h-full ${data.score >= 70 ? 'bg-green-500' : data.score >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{width: `${data.score}%`}}></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Sector Best Practices */}
+      <div className="grid grid-cols-2 gap-6">
+        <div className="glass rounded-xl p-5">
+          <h3 className="font-semibold mb-4">Key Performance Indicators</h3>
+          <div className="space-y-2">
+            {practices.kpis.map((kpi, i) => (
+              <div key={i} className="flex items-center gap-3 p-2 bg-white/5 rounded">
+                <span className="text-accent-400">📊</span>
+                <span className="text-sm">{kpi}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="glass rounded-xl p-5">
+          <h3 className="font-semibold mb-4">Watch List Items</h3>
+          <div className="space-y-2">
+            {practices.watchList.map((item, i) => (
+              <div key={i} className="flex items-center gap-3 p-2 bg-white/5 rounded">
+                <span className="text-orange-400">⚠️</span>
+                <span className="text-sm">{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Methodology */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-3">Analysis Methodology</h3>
+        <p className="text-gray-300 text-sm">{practices.methodology}</p>
+      </div>
+
+      {/* Companies in Sector */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Portfolio Companies in {sector.name}</h3>
+        {sectorCompanies.length > 0 ? (
+          <div className="grid grid-cols-3 gap-3">
+            {sectorCompanies.map(c => (
+              <button key={c.id} onClick={() => navigate(`#/company/${c.id}`)} className="p-3 bg-white/5 rounded-lg text-left hover:bg-white/10 transition">
+                <p className="font-medium">{c.name}</p>
+                <p className="text-xs text-gray-500">{c.country} • Score: {c.startingRiskScore}</p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500 text-sm">No portfolio companies in this sector</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============ SUPPLY CHAIN PAGE ============
+function SupplyChainPage() {
+  const { navigate } = useContext(AppContext);
+  const [selectedCompany, setSelectedCompany] = useState('philips');
+  
+  const company = companies[selectedCompany];
+  const supplyChain = supplyChainData[selectedCompany];
+
+  if (!supplyChain) {
+    return (
+      <div className="space-y-6 fade-in">
+        <h2 className="text-2xl font-bold">Supply Chain Analysis</h2>
+        <p className="text-gray-400">Select a company with supply chain data</p>
+        <div className="flex gap-2 flex-wrap">
+          {Object.keys(supplyChainData).map(id => (
+            <button key={id} onClick={() => setSelectedCompany(id)} className="px-4 py-2 glass glass-hover rounded-lg text-sm">
+              {companies[id]?.name || id}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 fade-in">
+      <div className="flex justify-between items-start">
+        <div>
+          <h2 className="text-2xl font-bold">Supply Chain Analysis</h2>
+          <p className="text-gray-400">Tier-1 supplier dependencies and risk assessment</p>
+        </div>
+      </div>
+
+      {/* Company Selector */}
+      <div className="flex gap-2 flex-wrap">
+        {Object.keys(supplyChainData).map(id => (
+          <button key={id} onClick={() => setSelectedCompany(id)}
+            className={`px-4 py-2 rounded-lg text-sm transition ${selectedCompany === id ? 'bg-accent-500' : 'glass glass-hover'}`}>
+            {companies[id]?.name || id}
+          </button>
+        ))}
+      </div>
+
+      {/* Company Header */}
+      <div className="glass rounded-xl p-5">
+        <div className="flex items-center gap-4">
+          <span className="text-3xl">{sectors[company.sector]?.icon}</span>
+          <div>
+            <h3 className="text-xl font-bold">{company.name}</h3>
+            <p className="text-gray-400">{sectors[company.sector]?.name} • {company.country}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Geographic Concentration */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Supply Chain Geographic Concentration</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {Object.entries(supplyChain.concentration).map(([region, pct]) => (
+            <div key={region} className="text-center">
+              <p className="text-gray-400 text-sm capitalize">{region}</p>
+              <p className="text-2xl font-bold">{pct}%</p>
+              <div className="mt-2 h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-accent-500" style={{width: `${pct}%`}}></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tier-1 Suppliers */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Tier-1 Suppliers</h3>
+        <div className="space-y-3">
+          {supplyChain.tier1.map((supplier, i) => (
+            <div key={i} className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
+              <div>
+                <p className="font-medium">{supplier.name}</p>
+                <p className="text-xs text-gray-500">{supplier.location} • {supplier.category}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-sm text-gray-400">Dependency</p>
+                  <p className="font-bold">{supplier.dependency}%</p>
+                </div>
+                <span className={`px-2 py-1 text-xs rounded ${supplier.risk === 'High' ? 'bg-red-500/20 text-red-400' : supplier.risk === 'Medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}`}>
+                  {supplier.risk} Risk
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Supply Chain Risks */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Identified Supply Chain Risks</h3>
+        <div className="space-y-3">
+          {supplyChain.risks.map((risk, i) => (
+            <div key={i} className={`p-4 rounded-lg border-l-4 ${risk.severity === 'High' ? 'border-red-500 bg-red-500/10' : risk.severity === 'Medium' ? 'border-yellow-500 bg-yellow-500/10' : 'border-blue-500 bg-blue-500/10'}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`px-2 py-0.5 text-xs rounded ${risk.severity === 'High' ? 'bg-red-500' : risk.severity === 'Medium' ? 'bg-yellow-500' : 'bg-blue-500'}`}>
+                  {risk.severity}
+                </span>
+                <span className="font-medium">{risk.type}</span>
+              </div>
+              <p className="text-sm text-gray-300">{risk.desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
