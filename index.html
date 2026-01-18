@@ -1,0 +1,1417 @@
+<!--
+  AI-First Early Warning System (EWS) Dashboard
+  Run instructions:
+  1. Open index.html directly in a browser, OR
+  2. Run: python -m http.server 8000 and visit http://localhost:8000
+  
+  DATA IS SIMULATED - Not real financial data
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RiskAlert AI - Early Warning System</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            dark: { 800: '#1a1a2e', 900: '#0f0f1a', 700: '#252542' },
+            accent: { 500: '#6366f1', 600: '#4f46e5', 400: '#818cf8' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%); }
+    .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+    .glass-hover:hover { background: rgba(255,255,255,0.1); }
+    @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .live-dot { animation: pulse-dot 2s infinite; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    .skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%); background-size: 200% 100%; animation: skeleton 1.5s infinite; }
+    @keyframes skeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  </style>
+</head>
+<body class="dark min-h-screen text-gray-100">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
+
+// ============ MOCK DATA ============
+const companies = {
+  philips: {
+    id: 'philips', name: 'Philips', sector: 'Health Technology (Simulated)', currency: 'EUR', ticker: 'PHIA (Simulated)',
+    startingRiskScore: 58, startingPrice: 23.5, riskTone: 'analyst/margin',
+    financials: { revenue: 18.1, revenueChange: -2.3, ebitdaMargin: 11.2, ebitdaChange: -0.8, netDebtEbitda: 2.8, interestCoverage: 4.2, liquidityRunway: 18, rating: 'BBB', outlook: 'Negative' },
+    thresholds: { netDebtEbitda: 3.0, interestCoverage: 3.5, sentimentFloor: -0.4 },
+    seededNews: [
+      { id: 'n1', headline: 'Zacks Research downgrades Philips stock from Hold to Strong Sell', source: 'MarketBeat', sentiment: -0.7, tag: 'Earnings', time: Date.now() - 3600000 },
+      { id: 'n2', headline: 'RBC Capital initiates Philips with Sector Perform rating, EUR 25 target', source: 'Investing.com', sentiment: -0.2, tag: 'Earnings', time: Date.now() - 7200000 },
+      { id: 'n3', headline: 'Philips 2026 OLED TVs to support Dolby Vision 2 HDR - feature LG models lack', source: 'What Hi-Fi', sentiment: 0.6, tag: 'Product', time: Date.now() - 10800000 },
+      { id: 'n4', headline: 'Philips to release 2026 outlook on February 10, expects sequential improvement', source: 'GlobeNewswire', sentiment: 0.3, tag: 'Earnings', time: Date.now() - 14400000 },
+      { id: 'n5', headline: 'Philips achieves 100% EcoDesigned new product introductions in 2024', source: 'Philips Press', sentiment: 0.5, tag: 'ESG', time: Date.now() - 18000000 },
+      { id: 'n6', headline: 'Philips circular revenue grows to 24% of total revenue', source: 'Philips Press', sentiment: 0.4, tag: 'ESG', time: Date.now() - 21600000 }
+    ],
+    seededAlerts: [
+      { id: 'a1', severity: 'High', category: 'Market', title: 'Analyst Downgrade Alert', summary: 'Zacks Research downgraded Philips from Hold to Strong Sell on Jan 16', reasoning: 'Multiple analyst downgrades often precede price weakness and may signal fundamental concerns', time: Date.now() - 1800000, ack: false },
+      { id: 'a2', severity: 'Medium', category: 'Financial', title: 'Margin Pressure Warning', summary: 'Tariff headwinds expected to impact margins despite sales improvement', reasoning: 'Cost pressures without pricing power can erode profitability', time: Date.now() - 5400000, ack: false },
+      { id: 'a3', severity: 'Low', category: 'ESG', title: 'Upcoming Outlook Release', summary: 'Philips 2026 outlook scheduled for February 10 - key catalyst', reasoning: 'Major announcements create event risk and volatility potential', time: Date.now() - 9000000, ack: false }
+    ]
+  },
+  siemens: {
+    id: 'siemens', name: 'Siemens', sector: 'Industrial Technology (Simulated)', currency: 'EUR', ticker: 'SIE (Simulated)',
+    startingRiskScore: 85, startingPrice: 198.0, riskTone: 'macro/supply-chain',
+    financials: { revenue: 78.9, revenueChange: 6.0, ebitdaMargin: 15.0, ebitdaChange: 0.8, netDebtEbitda: 1.2, interestCoverage: 9.5, liquidityRunway: 28, rating: 'A+', outlook: 'Positive' },
+    thresholds: { netDebtEbitda: 2.5, interestCoverage: 5.0, sentimentFloor: -0.35 },
+    seededNews: [
+      { id: 'n1', headline: 'Siemens acquires ASTER Technologies to boost PCB test verification capabilities', source: 'Siemens News', sentiment: 0.6, tag: 'Product', time: Date.now() - 2400000 },
+      { id: 'n2', headline: 'Siemens and NVIDIA expand partnership to develop Industrial AI Operating System', source: 'NVIDIA News', sentiment: 0.8, tag: 'Product', time: Date.now() - 6000000 },
+      { id: 'n3', headline: 'Siemens unveils Digital Twin Composer and 9 new industrial copilots at CES 2026', source: 'Siemens News', sentiment: 0.7, tag: 'Product', time: Date.now() - 9000000 },
+      { id: 'n4', headline: 'Siemens posts record FY2025: €78.9B revenue, €10.4B net income, €10.8B free cash flow', source: 'Industrial Production', sentiment: 0.9, tag: 'Earnings', time: Date.now() - 12000000 },
+      { id: 'n5', headline: 'Siemens raises medium-term revenue growth ambition to 6-9%', source: 'Industrial Production', sentiment: 0.7, tag: 'Earnings', time: Date.now() - 15000000 },
+      { id: 'n6', headline: 'Siemens Erlangen factory to become first AI-driven adaptive manufacturing site in 2026', source: 'NVIDIA News', sentiment: 0.6, tag: 'Operational', time: Date.now() - 18000000 }
+    ],
+    seededAlerts: [
+      { id: 'a1', severity: 'Low', category: 'Operational', title: 'Acquisition Integration Risk', summary: 'ASTER Technologies acquisition requires integration into Xcelerator portfolio', reasoning: 'M&A integration can distract management and incur unexpected costs', time: Date.now() - 3000000, ack: false },
+      { id: 'a2', severity: 'Low', category: 'Market', title: 'Record Valuation Alert', summary: 'Strong FY2025 results (€78.9B revenue) may be priced into stock', reasoning: 'Exceptional results create high expectations that are difficult to sustain', time: Date.now() - 7200000, ack: false },
+      { id: 'a3', severity: 'Medium', category: 'Macro', title: 'German Manufacturing PMI Watch', summary: 'European industrial indicators showing mixed signals', reasoning: 'Siemens revenue heavily exposed to European industrial cycle', time: Date.now() - 10800000, ack: false }
+    ]
+  }
+};
+
+const newsTemplates = {
+  philips: [
+    { t: 'Analysts express concerns over Philips execution risks and margin pressure', s: -0.5, tag: 'Earnings' },
+    { t: 'Philips faces tariff headwinds affecting healthcare equipment margins', s: -0.4, tag: 'Macro' },
+    { t: 'Healthcare sector competition intensifies from LG and Samsung', s: -0.3, tag: 'Product' },
+    { t: 'Philips BlueSeal helium-free MRI technology gains hospital adoption', s: 0.6, tag: 'Product' },
+    { t: 'Philips MiraVision Pro software receives positive industry reviews', s: 0.5, tag: 'Product' },
+    { t: 'Investors await Philips February 10 outlook for growth clarity', s: 0.1, tag: 'Earnings' },
+    { t: 'Philips sustainability initiatives drive ESG fund interest', s: 0.4, tag: 'ESG' }
+  ],
+  siemens: [
+    { t: 'European industrial orders show mixed signals amid macro uncertainty', s: -0.3, tag: 'Macro' },
+    { t: 'Siemens faces integration challenges with recent acquisitions', s: -0.2, tag: 'Operational' },
+    { t: 'Germany manufacturing PMI signals potential slowdown', s: -0.4, tag: 'Macro' },
+    { t: 'Siemens industrial copilots see strong enterprise adoption', s: 0.7, tag: 'Product' },
+    { t: 'PepsiCo expands digital twin deployment with Siemens technology', s: 0.6, tag: 'Product' },
+    { t: 'Siemens-NVIDIA partnership attracts new industrial AI customers', s: 0.7, tag: 'Product' },
+    { t: 'Siemens order book remains robust with 6% YoY growth', s: 0.5, tag: 'Earnings' }
+  ]
+};
+
+// ============ CONTEXT ============
+const AppContext = createContext();
+
+// ============ UTILS ============
+const formatTime = (ts) => new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+const formatDate = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const severityColor = (s) => ({ High: 'bg-red-500', Medium: 'bg-yellow-500', Low: 'bg-blue-400' }[s] || 'bg-gray-500');
+const sentimentColor = (s) => s > 0.2 ? 'text-green-400' : s < -0.2 ? 'text-red-400' : 'text-gray-400';
+const uid = () => Math.random().toString(36).substr(2, 9);
+
+// ============ TOAST SYSTEM ============
+const ToastContext = createContext();
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+  const addToast = (msg, type = 'info') => {
+    const id = uid();
+    setToasts(t => [...t, { id, msg, type }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
+  };
+  return (
+    <ToastContext.Provider value={addToast}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-50 space-y-2">
+        {toasts.map(t => (
+          <div key={t.id} className={`fade-in px-4 py-2 rounded-lg glass ${t.type === 'success' ? 'border-green-500' : 'border-accent-500'}`}>
+            {t.msg}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+// ============ MODAL ============
+function Modal({ open, onClose, title, children }) {
+  useEffect(() => {
+    const handler = (e) => e.key === 'Escape' && onClose();
+    if (open) window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="glass rounded-xl p-6 max-w-lg w-full mx-4 fade-in" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ============ SKELETON ============
+function Skeleton({ className }) {
+  return <div className={`skeleton rounded ${className}`}></div>;
+}
+
+// ============ CHART COMPONENT ============
+function LineChart({ data, labels, color = '#6366f1', anomalies = [], height = 200 }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  
+  // Create chart only once
+  useEffect(() => {
+    const ctx = canvasRef.current.getContext('2d');
+    chartRef.current = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels || [],
+        datasets: [{
+          data: data || [],
+          borderColor: color,
+          backgroundColor: color + '20',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+          pointBackgroundColor: color
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af', maxTicksLimit: 6 } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af' } }
+        }
+      }
+    });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, []);
+
+  // Update chart data without recreating
+  useEffect(() => {
+    if (chartRef.current && data) {
+      chartRef.current.data.labels = labels || [];
+      chartRef.current.data.datasets[0].data = data;
+      chartRef.current.data.datasets[0].pointRadius = data.map((_, i) => anomalies.includes(i) ? 6 : 2);
+      chartRef.current.data.datasets[0].pointBackgroundColor = data.map((_, i) => anomalies.includes(i) ? '#ef4444' : color);
+      chartRef.current.update('none');
+    }
+  }, [data, labels, anomalies, color]);
+
+  return (
+    <div style={{ height: height, maxHeight: height, position: 'relative' }}>
+      <canvas ref={canvasRef}></canvas>
+    </div>
+  );
+}
+
+// ============ AI COPILOT ============
+function AICopilot({ open, onClose, companyData, alerts, news }) {
+  const [messages, setMessages] = useState([{ role: 'ai', text: 'Hello! I\'m your AI Risk Copilot. Ask me about risks, alerts, or news.' }]);
+  const [input, setInput] = useState('');
+  const [listening, setListening] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(false);
+  const inputRef = useRef(null);
+  const toast = useContext(ToastContext);
+
+  const quickPrompts = [
+    "What are today's key risks?",
+    "Explain the risk score drivers",
+    "Summarize latest negative news",
+    "Any anomalies in stock or financials?"
+  ];
+
+  const generateResponse = (q) => {
+    const ql = q.toLowerCase();
+    if (ql.includes('key risk') || ql.includes('top risk')) {
+      const high = alerts.filter(a => !a.ack && a.severity === 'High').slice(0, 3);
+      if (high.length) return `Top active risks for ${companyData.name}:\n${high.map((a, i) => `${i + 1}. [${a.severity}] ${a.title}: ${a.summary}`).join('\n')}`;
+      return `No high-severity alerts currently active for ${companyData.name}. Monitoring continues.`;
+    }
+    if (ql.includes('score') || ql.includes('driver') || ql.includes('why')) {
+      return `${companyData.name} Risk Score Analysis:\n• Market signals: ${30 + Math.floor(Math.random() * 10)}% weight\n• News sentiment: ${25 + Math.floor(Math.random() * 10)}% weight\n• Financial metrics: ${35 + Math.floor(Math.random() * 10)}% weight\n\nRecent changes driven by ${companyData.riskTone} factors in simulated data.`;
+    }
+    if (ql.includes('news') || ql.includes('sentiment')) {
+      const neg = news.filter(n => n.sentiment < -0.2).slice(0, 3);
+      if (neg.length) return `Recent negative news for ${companyData.name}:\n${neg.map(n => `• ${n.headline} (sentiment: ${n.sentiment.toFixed(2)})`).join('\n')}`;
+      return `No significantly negative news in recent feed for ${companyData.name}.`;
+    }
+    if (ql.includes('anomal')) {
+      const anomalyAlerts = alerts.filter(a => a.category === 'Market' && !a.ack);
+      if (anomalyAlerts.length) return `Detected anomalies:\n${anomalyAlerts.map(a => `• ${a.title}: ${a.reasoning}`).join('\n')}`;
+      return `No anomalies currently detected in market or financial data for ${companyData.name}.`;
+    }
+    if (ql.includes('alert')) {
+      const match = ql.match(/alert\s+(\w+)/);
+      if (match) {
+        const alert = alerts.find(a => a.id.includes(match[1]));
+        if (alert) return `Alert ${alert.id}:\n• ${alert.title}\n• ${alert.summary}\n• AI reasoning: ${alert.reasoning}`;
+      }
+      return `I can help explain specific alerts. Please provide an alert ID or ask about specific risk categories.`;
+    }
+    return `I can help you understand:\n• Key risks and alerts\n• Risk score drivers and changes\n• News sentiment analysis\n• Detected anomalies\n\nWhat would you like to know about ${companyData.name}?`;
+  };
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    const userMsg = { role: 'user', text: input };
+    const aiResponse = generateResponse(input);
+    setMessages(m => [...m, userMsg, { role: 'ai', text: aiResponse }]);
+    setInput('');
+    if (ttsEnabled && window.speechSynthesis) {
+      const u = new SpeechSynthesisUtterance(aiResponse);
+      window.speechSynthesis.speak(u);
+    }
+  };
+
+  const startListening = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast('Speech recognition not supported in this browser', 'error');
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onstart = () => setListening(true);
+    recognition.onresult = (e) => { setInput(e.results[0][0].transcript); setListening(false); };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+    recognition.start();
+  };
+
+  useEffect(() => {
+    if (open && inputRef.current) inputRef.current.focus();
+  }, [open]);
+
+  useEffect(() => {
+    const handler = (e) => e.key === 'Escape' && onClose();
+    if (open) window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed right-0 top-0 h-full w-96 glass border-l border-white/10 z-30 flex flex-col fade-in">
+      <div className="p-4 border-b border-white/10 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <span className="text-accent-400 text-xl">🤖</span>
+          <span className="font-semibold">AI Copilot</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setTtsEnabled(!ttsEnabled)} className={`p-1 rounded ${ttsEnabled ? 'text-accent-400' : 'text-gray-500'}`} title="Toggle text-to-speech">
+            🔊
+          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">&times;</button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((m, i) => (
+          <div key={i} className={`p-3 rounded-lg ${m.role === 'ai' ? 'bg-accent-500/20 border border-accent-500/30' : 'bg-white/5 ml-8'}`}>
+            <p className="text-sm whitespace-pre-wrap">{m.text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="p-3 border-t border-white/10">
+        <div className="flex flex-wrap gap-2 mb-3">
+          {quickPrompts.map((p, i) => (
+            <button key={i} onClick={() => { setInput(p); }} className="text-xs px-2 py-1 rounded-full glass glass-hover">
+              {p}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={startListening} className={`p-2 rounded-lg glass ${listening ? 'bg-red-500/30' : 'glass-hover'}`} title="Voice input">
+            🎤
+          </button>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            placeholder="Ask about risks..."
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent-500"
+          />
+          <button onClick={handleSend} className="px-4 py-2 bg-accent-500 hover:bg-accent-600 rounded-lg text-sm font-medium">
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ MAIN APP ============
+function App() {
+  const [route, setRoute] = useState(window.location.hash || '#/portfolio');
+  const [companyId, setCompanyId] = useState('philips');
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotPrefill, setCopilotPrefill] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  
+  // Live data state
+  const [priceHistory, setPriceHistory] = useState({});
+  const [currentPrices, setCurrentPrices] = useState({});
+  const [newsFeeds, setNewsFeeds] = useState({});
+  const [alertsState, setAlertsState] = useState({});
+  const [riskScores, setRiskScores] = useState({});
+  const [sentimentHistory, setSentimentHistory] = useState({});
+  const [anomalyIndices, setAnomalyIndices] = useState({});
+  const [liveFeedActive, setLiveFeedActive] = useState(false);
+  const [feedSpeed, setFeedSpeed] = useState(1);
+
+  // Initialize data
+  useEffect(() => {
+    const init = {};
+    const initPrices = {};
+    const initNews = {};
+    const initAlerts = {};
+    const initScores = {};
+    const initSentiment = {};
+    const initAnomalies = {};
+    
+    Object.keys(companies).forEach(id => {
+      const c = companies[id];
+      const prices = [c.startingPrice];
+      for (let i = 1; i < 30; i++) {
+        prices.push(prices[i - 1] * (1 + (Math.random() - 0.5) * 0.01));
+      }
+      init[id] = prices;
+      initPrices[id] = prices[prices.length - 1];
+      initNews[id] = [...c.seededNews];
+      initAlerts[id] = [...c.seededAlerts];
+      initScores[id] = { score: c.startingRiskScore, prevScore: c.startingRiskScore - 2, confidence: 87 + Math.floor(Math.random() * 10) };
+      initSentiment[id] = c.seededNews.map(n => n.sentiment);
+      initAnomalies[id] = [];
+    });
+    
+    setPriceHistory(init);
+    setCurrentPrices(initPrices);
+    setNewsFeeds(initNews);
+    setAlertsState(initAlerts);
+    setRiskScores(initScores);
+    setSentimentHistory(initSentiment);
+    setAnomalyIndices(initAnomalies);
+    
+    setTimeout(() => setLoading(false), 1000);
+  }, []);
+
+  // Hash routing
+  useEffect(() => {
+    const handler = () => {
+      const hash = window.location.hash || '#/portfolio';
+      setRoute(hash);
+      const match = hash.match(/#\/company\/(\w+)/);
+      if (match && companies[match[1]]) setCompanyId(match[1]);
+    };
+    window.addEventListener('hashchange', handler);
+    handler();
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
+
+  // Live feed simulation
+  useEffect(() => {
+    if (!liveFeedActive) return;
+    
+    const priceInterval = setInterval(() => {
+      setPriceHistory(prev => {
+        const next = { ...prev };
+        Object.keys(companies).forEach(id => {
+          const prices = [...(next[id] || [])];
+          const last = prices[prices.length - 1] || companies[id].startingPrice;
+          const change = (Math.random() - 0.5) * 0.02;
+          const shock = Math.random() < 0.05 ? (Math.random() > 0.5 ? 0.03 : -0.03) : 0;
+          const newPrice = last * (1 + change + shock);
+          prices.push(newPrice);
+          if (prices.length > 50) prices.shift();
+          next[id] = prices;
+          
+          // Anomaly detection
+          if (prices.length >= 3) {
+            const recent = prices.slice(-3);
+            const pctChange = (recent[2] - recent[0]) / recent[0];
+            if (pctChange < -0.03) {
+              setAlertsState(a => {
+                const alerts = [...(a[id] || [])];
+                const exists = alerts.some(al => al.title.includes('Price Drop') && Date.now() - al.time < 60000);
+                if (!exists) {
+                  alerts.unshift({
+                    id: 'anomaly-' + uid(),
+                    severity: 'High',
+                    category: 'Market',
+                    title: 'Sharp Price Drop Detected',
+                    summary: `Price dropped ${(pctChange * 100).toFixed(1)}% in last 3 ticks (Simulated)`,
+                    reasoning: 'Rapid price decline may indicate market stress or negative news impact',
+                    time: Date.now(),
+                    ack: false
+                  });
+                }
+                return { ...a, [id]: alerts };
+              });
+              setAnomalyIndices(ai => ({ ...ai, [id]: [...(ai[id] || []), prices.length - 1] }));
+            }
+          }
+        });
+        return next;
+      });
+      
+      setCurrentPrices(prev => {
+        const next = { ...prev };
+        Object.keys(companies).forEach(id => {
+          const prices = priceHistory[id] || [];
+          next[id] = prices[prices.length - 1] || companies[id].startingPrice;
+        });
+        return next;
+      });
+    }, 8000 / feedSpeed);
+
+    const newsInterval = setInterval(() => {
+      const id = Math.random() > 0.5 ? 'philips' : 'siemens';
+      const templates = newsTemplates[id];
+      const tmpl = templates[Math.floor(Math.random() * templates.length)];
+      const newNews = {
+        id: 'news-' + uid(),
+        headline: tmpl.t,
+        source: ['Reuters Sim', 'Bloomberg Sim', 'FT Sim', 'WSJ Sim'][Math.floor(Math.random() * 4)],
+        sentiment: tmpl.s + (Math.random() - 0.5) * 0.2,
+        tag: tmpl.tag,
+        time: Date.now()
+      };
+      
+      setNewsFeeds(prev => {
+        const news = [newNews, ...(prev[id] || [])].slice(0, 20);
+        return { ...prev, [id]: news };
+      });
+      
+      setSentimentHistory(prev => {
+        const hist = [...(prev[id] || []), newNews.sentiment].slice(-20);
+        return { ...prev, [id]: hist };
+      });
+      
+      // Sentiment anomaly
+      const avgSentiment = (sentimentHistory[id] || []).slice(-5).reduce((a, b) => a + b, 0) / 5;
+      if (avgSentiment < companies[id].thresholds.sentimentFloor) {
+        setAlertsState(a => {
+          const alerts = [...(a[id] || [])];
+          const exists = alerts.some(al => al.title.includes('Sentiment') && Date.now() - al.time < 120000);
+          if (!exists) {
+            alerts.unshift({
+              id: 'sent-' + uid(),
+              severity: 'Medium',
+              category: 'News',
+              title: 'Negative Sentiment Spike',
+              summary: `Rolling sentiment average at ${avgSentiment.toFixed(2)} (Simulated)`,
+              reasoning: 'Sustained negative sentiment may precede adverse events',
+              time: Date.now(),
+              ack: false
+            });
+          }
+          return { ...a, [id]: alerts };
+        });
+      }
+    }, 30000 / feedSpeed);
+
+    // Risk score updates
+    const scoreInterval = setInterval(() => {
+      setRiskScores(prev => {
+        const next = { ...prev };
+        Object.keys(companies).forEach(id => {
+          const current = next[id]?.score || companies[id].startingRiskScore;
+          const sentiment = (sentimentHistory[id] || []).slice(-5).reduce((a, b) => a + b, 0) / 5;
+          const priceChange = priceHistory[id] ? (priceHistory[id][priceHistory[id].length - 1] - priceHistory[id][0]) / priceHistory[id][0] : 0;
+          const adjustment = sentiment * 5 + priceChange * 50 + (Math.random() - 0.5) * 3;
+          const newScore = Math.max(0, Math.min(100, current + adjustment));
+          next[id] = { score: Math.round(newScore), prevScore: current, confidence: 85 + Math.floor(Math.random() * 12) };
+        });
+        return next;
+      });
+    }, 25000 / feedSpeed);
+
+    return () => {
+      clearInterval(priceInterval);
+      clearInterval(newsInterval);
+      clearInterval(scoreInterval);
+    };
+  }, [liveFeedActive, feedSpeed, priceHistory, sentimentHistory]);
+
+  const navigate = (hash) => { window.location.hash = hash; };
+  
+  const acknowledgeAlert = (compId, alertId) => {
+    setAlertsState(prev => ({
+      ...prev,
+      [compId]: prev[compId].map(a => a.id === alertId ? { ...a, ack: true } : a)
+    }));
+  };
+
+  const openCopilotWith = (text) => {
+    setCopilotPrefill(text);
+    setCopilotOpen(true);
+  };
+
+  const currentCompany = companies[companyId];
+  const currentAlerts = alertsState[companyId] || [];
+  const currentNews = newsFeeds[companyId] || [];
+  const currentScore = riskScores[companyId] || { score: currentCompany.startingRiskScore, prevScore: currentCompany.startingRiskScore, confidence: 90 };
+  const currentPriceData = priceHistory[companyId] || [];
+  const currentSentiment = sentimentHistory[companyId] || [];
+  const currentAnomalies = anomalyIndices[companyId] || [];
+
+  const filteredAlerts = searchQuery
+    ? currentAlerts.filter(a => a.title.toLowerCase().includes(searchQuery.toLowerCase()) || a.summary.toLowerCase().includes(searchQuery.toLowerCase()))
+    : currentAlerts;
+  
+  const filteredNews = searchQuery
+    ? currentNews.filter(n => n.headline.toLowerCase().includes(searchQuery.toLowerCase()))
+    : currentNews;
+
+  const contextValue = {
+    companyId, currentCompany, currentAlerts: filteredAlerts, currentNews: filteredNews,
+    currentScore, currentPriceData, currentSentiment, currentAnomalies,
+    navigate, acknowledgeAlert, openCopilotWith, searchQuery, setSearchQuery,
+    liveFeedActive, setLiveFeedActive, feedSpeed, setFeedSpeed, loading,
+    alertsState, riskScores
+  };
+
+  // Render current page
+  const renderPage = () => {
+    if (loading) return <LoadingPage />;
+    if (route.startsWith('#/company/') && route.includes('/alerts')) return <AlertsPage />;
+    if (route.startsWith('#/company/') && route.includes('/news')) return <NewsPage />;
+    if (route.startsWith('#/company/') && route.includes('/financials')) return <FinancialsPage />;
+    if (route.startsWith('#/company/') && route.includes('/model')) return <ModelPage />;
+    if (route.startsWith('#/company/')) return <DashboardPage />;
+    if (route === '#/portfolio') return <PortfolioPage />;
+    if (route === '#/settings') return <SettingsPage />;
+    return <DashboardPage />;
+  };
+
+  return (
+    <ToastProvider>
+      <AppContext.Provider value={contextValue}>
+        <div className="min-h-screen flex flex-col">
+          <TopBar 
+            onCopilotOpen={() => setCopilotOpen(true)} 
+            onCompanyChange={(id) => navigate(`#/company/${id}`)}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            liveFeedActive={liveFeedActive}
+          />
+          <div className="flex flex-1">
+            <Sidebar currentRoute={route} />
+            <main className="flex-1 p-6 overflow-auto">
+              {renderPage()}
+            </main>
+          </div>
+          <AICopilot 
+            open={copilotOpen} 
+            onClose={() => setCopilotOpen(false)} 
+            companyData={currentCompany}
+            alerts={currentAlerts}
+            news={currentNews}
+          />
+        </div>
+      </AppContext.Provider>
+    </ToastProvider>
+  );
+}
+
+// ============ TOP BAR ============
+function TopBar({ onCopilotOpen, onCompanyChange, searchQuery, setSearchQuery, liveFeedActive }) {
+  const { companyId } = useContext(AppContext);
+  return (
+    <header className="glass border-b border-white/10 px-6 py-3 flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <h1 className="text-xl font-bold bg-gradient-to-r from-accent-400 to-purple-400 bg-clip-text text-transparent">RiskAlert AI</h1>
+        <select 
+          value={companyId} 
+          onChange={e => onCompanyChange(e.target.value)}
+          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent-500"
+        >
+          <option value="philips">Philips</option>
+          <option value="siemens">Siemens</option>
+        </select>
+        <span className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 rounded">REAL NEWS • SIMULATED PRICES</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="relative">
+          <input 
+            type="text" 
+            placeholder="Search alerts, news..." 
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-64 bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:border-accent-500"
+          />
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">🔍</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${liveFeedActive ? 'bg-green-400 live-dot' : 'bg-gray-500'}`}></span>
+          <span className="text-xs text-gray-400">{liveFeedActive ? 'Live' : 'Paused'}</span>
+        </div>
+        <button onClick={onCopilotOpen} className="flex items-center gap-2 px-4 py-1.5 bg-accent-500 hover:bg-accent-600 rounded-lg text-sm font-medium transition">
+          🤖 AI Copilot
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// ============ SIDEBAR ============
+function Sidebar({ currentRoute }) {
+  const { companyId, navigate } = useContext(AppContext);
+  const items = [
+    { icon: '📊', label: 'Dashboard', route: `#/company/${companyId}` },
+    { icon: '🚨', label: 'Alerts', route: `#/company/${companyId}/alerts` },
+    { icon: '📰', label: 'News & Sentiment', route: `#/company/${companyId}/news` },
+    { icon: '💰', label: 'Financials', route: `#/company/${companyId}/financials` },
+    { icon: '🧠', label: 'Model & Explain', route: `#/company/${companyId}/model` },
+    { icon: '📁', label: 'Portfolio', route: '#/portfolio' },
+    { icon: '⚙️', label: 'Settings', route: '#/settings' }
+  ];
+  return (
+    <nav className="w-56 glass border-r border-white/10 p-4">
+      <ul className="space-y-1">
+        {items.map(item => (
+          <li key={item.route}>
+            <button
+              onClick={() => navigate(item.route)}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${
+                currentRoute === item.route || currentRoute.startsWith(item.route + '/') 
+                  ? 'bg-accent-500/20 text-accent-400' 
+                  : 'hover:bg-white/5 text-gray-300'
+              }`}
+            >
+              <span>{item.icon}</span>
+              {item.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+// ============ LOADING PAGE ============
+function LoadingPage() {
+  return (
+    <div className="grid grid-cols-2 gap-6">
+      <Skeleton className="h-48 col-span-2" />
+      <Skeleton className="h-64" />
+      <Skeleton className="h-64" />
+      <Skeleton className="h-48" />
+      <Skeleton className="h-48" />
+    </div>
+  );
+}
+
+// ============ DASHBOARD PAGE ============
+function DashboardPage() {
+  const ctx = useContext(AppContext);
+  const { currentCompany, currentScore, currentAlerts, currentNews, currentPriceData, currentSentiment, currentAnomalies, navigate, acknowledgeAlert, openCopilotWith, liveFeedActive, setLiveFeedActive, companyId } = ctx;
+  const toast = useContext(ToastContext);
+  
+  const [explainModal, setExplainModal] = useState(false);
+  const [whatIfModal, setWhatIfModal] = useState(false);
+  const [signalModal, setSignalModal] = useState(null);
+  const [taskModal, setTaskModal] = useState(null);
+  const [summaryModal, setSummaryModal] = useState(false);
+  const [whatIfScore, setWhatIfScore] = useState(currentScore.score);
+  const [whatIfParams, setWhatIfParams] = useState({ sentiment: 0, stockDrop: 0, leverage: 0 });
+
+  const activeAlerts = currentAlerts.filter(a => !a.ack);
+  const priceLabels = currentPriceData.map((_, i) => i.toString());
+  const currentPrice = currentPriceData[currentPriceData.length - 1] || currentCompany.startingPrice;
+  const startPrice = currentPriceData[0] || currentCompany.startingPrice;
+  const priceChange = ((currentPrice - startPrice) / startPrice * 100).toFixed(2);
+  const sentimentAvg = currentSentiment.length ? (currentSentiment.reduce((a, b) => a + b, 0) / currentSentiment.length).toFixed(2) : '0.00';
+
+  const signals = [
+    { name: 'Market Stress', value: 35 + Math.floor(Math.random() * 20), desc: 'Measures market volatility and price stress indicators' },
+    { name: 'News Negativity', value: Math.max(0, Math.min(100, 50 - sentimentAvg * 50)), desc: 'Aggregated negative sentiment from news sources' },
+    { name: 'Fundamentals', value: 65 + Math.floor(Math.random() * 15), desc: 'Financial health based on key ratios' },
+    { name: 'Liquidity Pressure', value: 25 + Math.floor(Math.random() * 20), desc: 'Cash flow and liquidity runway indicators' },
+    { name: 'Event Risk', value: 40 + Math.floor(Math.random() * 25), desc: 'Probability of adverse events based on signals' }
+  ];
+
+  const updateWhatIf = () => {
+    const base = currentScore.score;
+    const adj = whatIfParams.sentiment * -10 + whatIfParams.stockDrop * -20 + whatIfParams.leverage * -15;
+    setWhatIfScore(Math.max(0, Math.min(100, base + adj)));
+  };
+
+  useEffect(() => { updateWhatIf(); }, [whatIfParams, currentScore.score]);
+
+  const handleCreateTask = (alert) => {
+    setTaskModal(null);
+    toast('Task created successfully', 'success');
+  };
+
+  return (
+    <div className="space-y-6 fade-in">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">{currentCompany.name} Dashboard</h2>
+        <span className="text-sm text-gray-400">{currentCompany.sector}</span>
+      </div>
+
+      {/* Hero Risk Score Card */}
+      <div className="glass rounded-xl p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg text-gray-400 mb-2">AI Risk Score</h3>
+            <div className="flex items-baseline gap-4">
+              <span className={`text-6xl font-bold ${currentScore.score >= 70 ? 'text-green-400' : currentScore.score >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {currentScore.score}
+              </span>
+              <span className={`text-xl ${currentScore.score > currentScore.prevScore ? 'text-green-400' : 'text-red-400'}`}>
+                {currentScore.score > currentScore.prevScore ? '↑' : '↓'} {Math.abs(currentScore.score - currentScore.prevScore)}
+              </span>
+            </div>
+            <p className="text-sm text-gray-400 mt-2">Confidence: {currentScore.confidence}%</p>
+            <p className="text-sm text-gray-300 mt-3">
+              <span className="text-accent-400">Top drivers today:</span> {currentCompany.riskTone === 'analyst/margin' ? 'Analyst sentiment, margin pressure, tariff headwinds' : 'Macro conditions, AI investment cycle, acquisition integration'}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setExplainModal(true)} className="px-4 py-2 glass glass-hover rounded-lg text-sm">Explain Score</button>
+            <button onClick={() => setWhatIfModal(true)} className="px-4 py-2 bg-accent-500 hover:bg-accent-600 rounded-lg text-sm">Run What-If</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Alerts Feed */}
+        <div className="glass rounded-xl p-5">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold">Active Alerts ({activeAlerts.length})</h3>
+            <button onClick={() => navigate(`#/company/${companyId}/alerts`)} className="text-accent-400 text-sm hover:underline">Show all</button>
+          </div>
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {activeAlerts.slice(0, 5).map(alert => (
+              <div key={alert.id} className="p-3 bg-white/5 rounded-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-2 py-0.5 text-xs rounded ${severityColor(alert.severity)}`}>{alert.severity}</span>
+                  <span className="text-xs text-gray-500">{alert.category}</span>
+                  <span className="text-xs text-gray-500 ml-auto">{formatTime(alert.time)}</span>
+                </div>
+                <p className="font-medium text-sm">{alert.title}</p>
+                <p className="text-xs text-gray-400 mt-1">{alert.summary}</p>
+                <p className="text-xs text-accent-400 mt-1 italic">AI: {alert.reasoning}</p>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => acknowledgeAlert(companyId, alert.id)} className="text-xs px-2 py-1 glass glass-hover rounded">Acknowledge</button>
+                  <button onClick={() => setTaskModal(alert)} className="text-xs px-2 py-1 glass glass-hover rounded">Create Task</button>
+                  <button onClick={() => openCopilotWith(`Explain alert ${alert.id}`)} className="text-xs px-2 py-1 glass glass-hover rounded">Ask AI</button>
+                </div>
+              </div>
+            ))}
+            {activeAlerts.length === 0 && <p className="text-gray-500 text-sm">No active alerts</p>}
+          </div>
+        </div>
+
+        {/* Stock Price Chart */}
+        <div className="glass rounded-xl p-5">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold">Stock Price ({currentCompany.ticker})</h3>
+            <div className="flex items-center gap-3">
+              <span className={`text-lg font-bold ${parseFloat(priceChange) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                €{currentPrice.toFixed(2)} ({priceChange}%)
+              </span>
+              <button onClick={() => setLiveFeedActive(!liveFeedActive)} className="text-xs px-2 py-1 glass glass-hover rounded">
+                {liveFeedActive ? 'Pause' : 'Resume'}
+              </button>
+            </div>
+          </div>
+          <LineChart data={currentPriceData} labels={priceLabels} anomalies={currentAnomalies} height={140} />
+          {currentAnomalies.length > 0 && <p className="text-xs text-red-400 mt-2">⚠️ Anomalies detected (red markers)</p>}
+        </div>
+
+        {/* News & Sentiment */}
+        <div className="glass rounded-xl p-5">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold">News & Sentiment</h3>
+            <div className="flex gap-2">
+              <button onClick={() => setSummaryModal(true)} className="text-xs px-2 py-1 glass glass-hover rounded">Summarize Today</button>
+              <button onClick={() => navigate(`#/company/${companyId}/news`)} className="text-accent-400 text-sm hover:underline">View all</button>
+            </div>
+          </div>
+          <p className="text-sm text-gray-400 mb-3">Avg Sentiment: <span className={sentimentColor(parseFloat(sentimentAvg))}>{sentimentAvg}</span></p>
+          <div className="mb-3">
+            <LineChart data={currentSentiment} labels={currentSentiment.map((_, i) => i.toString())} color="#22c55e" height={80} />
+          </div>
+          <div className="space-y-2 max-h-36 overflow-y-auto">
+            {currentNews.slice(0, 4).map(n => (
+              <div key={n.id} className="flex items-center justify-between text-sm">
+                <div className="flex-1 truncate pr-2">{n.headline}</div>
+                <span className={`text-xs ${sentimentColor(n.sentiment)}`}>{n.sentiment.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Financials Card */}
+        <div className="glass rounded-xl p-5">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold">Financial Metrics</h3>
+            <button onClick={() => navigate(`#/company/${companyId}/financials`)} className="text-accent-400 text-sm hover:underline">Open Financials</button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="p-2 bg-white/5 rounded">
+              <p className="text-gray-400">Revenue</p>
+              <p className="font-bold">€{currentCompany.financials.revenue}B <span className={currentCompany.financials.revenueChange >= 0 ? 'text-green-400' : 'text-red-400'}>({currentCompany.financials.revenueChange > 0 ? '+' : ''}{currentCompany.financials.revenueChange}%)</span></p>
+            </div>
+            <div className="p-2 bg-white/5 rounded">
+              <p className="text-gray-400">EBITDA Margin</p>
+              <p className="font-bold">{currentCompany.financials.ebitdaMargin}% <span className={currentCompany.financials.ebitdaChange >= 0 ? 'text-green-400' : 'text-red-400'}>({currentCompany.financials.ebitdaChange > 0 ? '+' : ''}{currentCompany.financials.ebitdaChange}pp)</span></p>
+            </div>
+            <div className="p-2 bg-white/5 rounded">
+              <p className="text-gray-400">Net Debt/EBITDA</p>
+              <p className={`font-bold ${currentCompany.financials.netDebtEbitda > currentCompany.thresholds.netDebtEbitda ? 'text-red-400' : ''}`}>{currentCompany.financials.netDebtEbitda}x</p>
+            </div>
+            <div className="p-2 bg-white/5 rounded">
+              <p className="text-gray-400">Interest Coverage</p>
+              <p className={`font-bold ${currentCompany.financials.interestCoverage < currentCompany.thresholds.interestCoverage ? 'text-red-400' : ''}`}>{currentCompany.financials.interestCoverage}x</p>
+            </div>
+            <div className="p-2 bg-white/5 rounded">
+              <p className="text-gray-400">Liquidity Runway</p>
+              <p className="font-bold">{currentCompany.financials.liquidityRunway} months</p>
+            </div>
+            <div className="p-2 bg-white/5 rounded">
+              <p className="text-gray-400">Rating</p>
+              <p className="font-bold">{currentCompany.financials.rating} <span className="text-gray-400 text-xs">({currentCompany.financials.outlook})</span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Signals Radar */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Signals Radar</h3>
+        <div className="grid grid-cols-5 gap-4">
+          {signals.map(sig => (
+            <button key={sig.name} onClick={() => setSignalModal(sig)} className="text-center p-3 bg-white/5 rounded-lg hover:bg-white/10 transition">
+              <p className="text-xs text-gray-400 mb-2">{sig.name}</p>
+              <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className={`h-full ${sig.value > 60 ? 'bg-red-500' : sig.value > 40 ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${sig.value}%` }}></div>
+              </div>
+              <p className="text-sm font-bold mt-1">{sig.value}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Modals */}
+      <Modal open={explainModal} onClose={() => setExplainModal(false)} title="Risk Score Explanation">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">The AI Risk Score is computed from multiple weighted signals:</p>
+          <div className="space-y-2">
+            {[
+              { driver: 'Market Signals', weight: 30, impact: priceChange < 0 ? 'Negative' : 'Positive' },
+              { driver: 'News Sentiment NLP', weight: 25, impact: sentimentAvg < 0 ? 'Negative' : 'Positive' },
+              { driver: 'Financial Ratios', weight: 35, impact: 'Stable' },
+              { driver: 'Manual Adjustments', weight: 10, impact: 'None' }
+            ].map(d => (
+              <div key={d.driver} className="flex justify-between items-center p-2 bg-white/5 rounded">
+                <span>{d.driver}</span>
+                <span className="text-gray-400">{d.weight}%</span>
+                <span className={d.impact === 'Negative' ? 'text-red-400' : d.impact === 'Positive' ? 'text-green-400' : 'text-gray-400'}>{d.impact}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={whatIfModal} onClose={() => setWhatIfModal(false)} title="What-If Scenario Analysis">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-300">Adjust parameters to simulate score impact:</p>
+          <div>
+            <label className="text-sm text-gray-400">Sentiment Shock (-1 to +1)</label>
+            <input type="range" min="-1" max="1" step="0.1" value={whatIfParams.sentiment} onChange={e => setWhatIfParams(p => ({ ...p, sentiment: parseFloat(e.target.value) }))} className="w-full" />
+            <p className="text-xs text-right">{whatIfParams.sentiment}</p>
+          </div>
+          <div>
+            <label className="text-sm text-gray-400">Stock Price Drop (0 to -1)</label>
+            <input type="range" min="-1" max="0" step="0.1" value={whatIfParams.stockDrop} onChange={e => setWhatIfParams(p => ({ ...p, stockDrop: parseFloat(e.target.value) }))} className="w-full" />
+            <p className="text-xs text-right">{(whatIfParams.stockDrop * 100).toFixed(0)}%</p>
+          </div>
+          <div>
+            <label className="text-sm text-gray-400">Leverage Increase (0 to 1)</label>
+            <input type="range" min="0" max="1" step="0.1" value={whatIfParams.leverage} onChange={e => setWhatIfParams(p => ({ ...p, leverage: parseFloat(e.target.value) }))} className="w-full" />
+            <p className="text-xs text-right">{whatIfParams.leverage}</p>
+          </div>
+          <div className="text-center p-4 bg-white/5 rounded-lg">
+            <p className="text-gray-400">Projected Score</p>
+            <p className={`text-4xl font-bold ${whatIfScore >= 70 ? 'text-green-400' : whatIfScore >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>{whatIfScore}</p>
+            <p className="text-sm text-gray-500">vs current: {currentScore.score}</p>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!signalModal} onClose={() => setSignalModal(null)} title={signalModal?.name || ''}>
+        <p className="text-gray-300">{signalModal?.desc}</p>
+        <p className="mt-4 text-lg font-bold">Current Value: <span className={signalModal?.value > 60 ? 'text-red-400' : signalModal?.value > 40 ? 'text-yellow-400' : 'text-green-400'}>{signalModal?.value}</span></p>
+      </Modal>
+
+      <Modal open={!!taskModal} onClose={() => setTaskModal(null)} title="Create Task">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-300">Create a follow-up task for alert:</p>
+          <p className="font-medium">{taskModal?.title}</p>
+          <input type="text" placeholder="Task description..." className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm" defaultValue={`Review: ${taskModal?.summary}`} />
+          <button onClick={() => handleCreateTask(taskModal)} className="w-full py-2 bg-accent-500 hover:bg-accent-600 rounded-lg font-medium">Create Task</button>
+        </div>
+      </Modal>
+
+      <Modal open={summaryModal} onClose={() => setSummaryModal(false)} title="AI News Summary">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">[SIMULATED AI SUMMARY]</p>
+          <p className="text-gray-100">
+            Today's news for {currentCompany.name} shows {sentimentAvg < 0 ? 'predominantly negative' : 'mixed'} sentiment (avg: {sentimentAvg}).
+            Key themes include {currentCompany.riskTone === 'analyst/margin' ? 'analyst sentiment and margin pressures' : 'AI partnerships and strong financial performance'}.
+            {activeAlerts.length > 0 ? ` There are ${activeAlerts.length} active alerts requiring attention.` : ' No critical alerts at this time.'}
+          </p>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ============ ALERTS PAGE ============
+function AlertsPage() {
+  const ctx = useContext(AppContext);
+  const { currentAlerts, acknowledgeAlert, companyId, currentCompany, openCopilotWith } = ctx;
+  const toast = useContext(ToastContext);
+  const [filter, setFilter] = useState({ severity: 'all', category: 'all', time: 'all' });
+  const [taskModal, setTaskModal] = useState(null);
+
+  let filtered = [...currentAlerts];
+  if (filter.severity !== 'all') filtered = filtered.filter(a => a.severity === filter.severity);
+  if (filter.category !== 'all') filtered = filtered.filter(a => a.category === filter.category);
+  if (filter.time !== 'all') {
+    const now = Date.now();
+    const windows = { '1h': 3600000, '24h': 86400000, '7d': 604800000 };
+    filtered = filtered.filter(a => now - a.time < windows[filter.time]);
+  }
+
+  const exportAlerts = () => {
+    const data = JSON.stringify(filtered, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${companyId}-alerts-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Alerts exported successfully', 'success');
+  };
+
+  return (
+    <div className="space-y-6 fade-in">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">{currentCompany.name} - All Alerts</h2>
+        <button onClick={exportAlerts} className="px-4 py-2 bg-accent-500 hover:bg-accent-600 rounded-lg text-sm">Export JSON</button>
+      </div>
+
+      <div className="flex gap-4 flex-wrap">
+        <select value={filter.severity} onChange={e => setFilter(f => ({ ...f, severity: e.target.value }))} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All Severities</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+        <select value={filter.category} onChange={e => setFilter(f => ({ ...f, category: e.target.value }))} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All Categories</option>
+          <option value="Market">Market</option>
+          <option value="News">News</option>
+          <option value="Financial">Financial</option>
+          <option value="ESG">ESG</option>
+          <option value="Legal">Legal</option>
+          <option value="Operational">Operational</option>
+        </select>
+        <select value={filter.time} onChange={e => setFilter(f => ({ ...f, time: e.target.value }))} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All Time</option>
+          <option value="1h">Last 1 hour</option>
+          <option value="24h">Last 24 hours</option>
+          <option value="7d">Last 7 days</option>
+        </select>
+      </div>
+
+      <div className="space-y-3">
+        {filtered.map(alert => (
+          <div key={alert.id} className={`glass rounded-lg p-4 ${alert.ack ? 'opacity-50' : ''}`}>
+            <div className="flex items-center gap-3 mb-2">
+              <span className={`px-2 py-0.5 text-xs rounded ${severityColor(alert.severity)}`}>{alert.severity}</span>
+              <span className="text-xs text-gray-500 px-2 py-0.5 bg-white/5 rounded">{alert.category}</span>
+              <span className="text-xs text-gray-500">{formatDate(alert.time)}</span>
+              {alert.ack && <span className="text-xs text-green-400">✓ Acknowledged</span>}
+            </div>
+            <p className="font-medium">{alert.title}</p>
+            <p className="text-sm text-gray-400 mt-1">{alert.summary}</p>
+            <p className="text-sm text-accent-400 mt-1 italic">AI: {alert.reasoning}</p>
+            {!alert.ack && (
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => acknowledgeAlert(companyId, alert.id)} className="text-sm px-3 py-1 glass glass-hover rounded">Acknowledge</button>
+                <button onClick={() => setTaskModal(alert)} className="text-sm px-3 py-1 glass glass-hover rounded">Create Task</button>
+                <button onClick={() => openCopilotWith(`Explain alert ${alert.id}`)} className="text-sm px-3 py-1 glass glass-hover rounded">Ask AI</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {filtered.length === 0 && <p className="text-gray-500 text-center py-8">No alerts match the current filters</p>}
+      </div>
+
+      <Modal open={!!taskModal} onClose={() => setTaskModal(null)} title="Create Task">
+        <div className="space-y-4">
+          <p className="font-medium">{taskModal?.title}</p>
+          <input type="text" placeholder="Task description..." className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm" defaultValue={`Review: ${taskModal?.summary}`} />
+          <button onClick={() => { setTaskModal(null); toast('Task created', 'success'); }} className="w-full py-2 bg-accent-500 hover:bg-accent-600 rounded-lg">Create</button>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ============ NEWS PAGE ============
+function NewsPage() {
+  const ctx = useContext(AppContext);
+  const { currentNews, currentCompany, currentSentiment } = ctx;
+  const [sentimentFilter, setSentimentFilter] = useState('all');
+  const [keyword, setKeyword] = useState('');
+  const [briefingModal, setBriefingModal] = useState(false);
+
+  let filtered = [...currentNews];
+  if (sentimentFilter === 'positive') filtered = filtered.filter(n => n.sentiment > 0.2);
+  if (sentimentFilter === 'negative') filtered = filtered.filter(n => n.sentiment < -0.2);
+  if (sentimentFilter === 'neutral') filtered = filtered.filter(n => n.sentiment >= -0.2 && n.sentiment <= 0.2);
+  if (keyword) filtered = filtered.filter(n => n.headline.toLowerCase().includes(keyword.toLowerCase()));
+
+  const sentimentLabels = currentSentiment.map((_, i) => i.toString());
+
+  return (
+    <div className="space-y-6 fade-in">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">{currentCompany.name} - News & Sentiment</h2>
+        <button onClick={() => setBriefingModal(true)} className="px-4 py-2 bg-accent-500 hover:bg-accent-600 rounded-lg text-sm">Generate Briefing</button>
+      </div>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-3">Sentiment Trend</h3>
+        <LineChart data={currentSentiment} labels={sentimentLabels} color="#22c55e" height={120} />
+      </div>
+
+      <div className="flex gap-4">
+        <input type="text" placeholder="Search headlines..." value={keyword} onChange={e => setKeyword(e.target.value)} className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm" />
+        <select value={sentimentFilter} onChange={e => setSentimentFilter(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+          <option value="all">All Sentiment</option>
+          <option value="positive">Positive</option>
+          <option value="neutral">Neutral</option>
+          <option value="negative">Negative</option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        {filtered.map(n => (
+          <div key={n.id} className="glass rounded-lg p-4 flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs text-gray-500">{n.source}</span>
+                <span className="text-xs px-2 py-0.5 bg-white/5 rounded">{n.tag}</span>
+                <span className="text-xs text-gray-500">{formatDate(n.time)}</span>
+              </div>
+              <p className="text-sm">{n.headline}</p>
+            </div>
+            <span className={`text-lg font-bold ml-4 ${sentimentColor(n.sentiment)}`}>{n.sentiment.toFixed(2)}</span>
+          </div>
+        ))}
+        {filtered.length === 0 && <p className="text-gray-500 text-center py-8">No news matches the current filters</p>}
+      </div>
+
+      <Modal open={briefingModal} onClose={() => setBriefingModal(false)} title="AI Daily Briefing">
+        <div className="space-y-3">
+          <p className="text-gray-300">[SIMULATED AI BRIEFING for {currentCompany.name}]</p>
+          <p>Headlines today: {currentNews.length}</p>
+          <p>Positive: {currentNews.filter(n => n.sentiment > 0.2).length} | Negative: {currentNews.filter(n => n.sentiment < -0.2).length}</p>
+          <p className="mt-4">Key themes: {currentCompany.riskTone === 'analyst/margin' ? 'Analyst ratings, tariff impacts, Feb 10 outlook' : 'NVIDIA partnership, ASTER acquisition, record financials, industrial AI'}</p>
+          <p className="mt-2">Recommendation: {currentSentiment.slice(-5).reduce((a, b) => a + b, 0) / 5 < -0.2 ? 'Monitor closely for escalation' : 'Continue standard monitoring'}</p>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ============ FINANCIALS PAGE ============
+function FinancialsPage() {
+  const ctx = useContext(AppContext);
+  const { currentCompany } = ctx;
+  const toast = useContext(ToastContext);
+  const [thresholds, setThresholds] = useState(currentCompany.thresholds);
+
+  const fin = currentCompany.financials;
+  const revenueData = [fin.revenue * 0.92, fin.revenue * 0.95, fin.revenue * 0.97, fin.revenue * 0.99, fin.revenue];
+  const ebitdaData = [fin.ebitdaMargin + 1.5, fin.ebitdaMargin + 1.0, fin.ebitdaMargin + 0.5, fin.ebitdaMargin + 0.2, fin.ebitdaMargin];
+
+  return (
+    <div className="space-y-6 fade-in">
+      <h2 className="text-2xl font-bold">{currentCompany.name} - Financials</h2>
+
+      <div className="grid grid-cols-2 gap-6">
+        <div className="glass rounded-xl p-5">
+          <h3 className="font-semibold mb-3">Revenue Trend (€B)</h3>
+          <LineChart data={revenueData} labels={['Q1', 'Q2', 'Q3', 'Q4', 'LTM']} color="#6366f1" height={150} />
+        </div>
+        <div className="glass rounded-xl p-5">
+          <h3 className="font-semibold mb-3">EBITDA Margin (%)</h3>
+          <LineChart data={ebitdaData} labels={['Q1', 'Q2', 'Q3', 'Q4', 'LTM']} color="#22c55e" height={150} />
+        </div>
+      </div>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Key Ratios</h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="p-4 bg-white/5 rounded-lg text-center">
+            <p className="text-gray-400 text-sm">Net Debt / EBITDA</p>
+            <p className={`text-3xl font-bold mt-1 ${fin.netDebtEbitda > thresholds.netDebtEbitda ? 'text-red-400' : 'text-green-400'}`}>{fin.netDebtEbitda}x</p>
+            <p className="text-xs text-gray-500 mt-1">Threshold: {thresholds.netDebtEbitda}x</p>
+          </div>
+          <div className="p-4 bg-white/5 rounded-lg text-center">
+            <p className="text-gray-400 text-sm">Interest Coverage</p>
+            <p className={`text-3xl font-bold mt-1 ${fin.interestCoverage < thresholds.interestCoverage ? 'text-red-400' : 'text-green-400'}`}>{fin.interestCoverage}x</p>
+            <p className="text-xs text-gray-500 mt-1">Threshold: {thresholds.interestCoverage}x</p>
+          </div>
+          <div className="p-4 bg-white/5 rounded-lg text-center">
+            <p className="text-gray-400 text-sm">Liquidity Runway</p>
+            <p className="text-3xl font-bold mt-1 text-green-400">{fin.liquidityRunway}mo</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Threshold Settings (Local Only)</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm text-gray-400">Net Debt/EBITDA Threshold</label>
+            <input type="number" step="0.1" value={thresholds.netDebtEbitda} onChange={e => setThresholds(t => ({ ...t, netDebtEbitda: parseFloat(e.target.value) }))} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 mt-1" />
+          </div>
+          <div>
+            <label className="text-sm text-gray-400">Interest Coverage Threshold</label>
+            <input type="number" step="0.1" value={thresholds.interestCoverage} onChange={e => setThresholds(t => ({ ...t, interestCoverage: parseFloat(e.target.value) }))} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 mt-1" />
+          </div>
+        </div>
+        <button onClick={() => toast('Thresholds saved locally', 'success')} className="mt-4 px-4 py-2 bg-accent-500 hover:bg-accent-600 rounded-lg text-sm">Save Thresholds</button>
+      </div>
+    </div>
+  );
+}
+
+// ============ MODEL PAGE ============
+function ModelPage() {
+  const ctx = useContext(AppContext);
+  const { currentCompany, currentScore } = ctx;
+
+  const drivers = [
+    { name: 'Market Price Signals', weight: 30, source: 'Real-time market data' },
+    { name: 'News Sentiment NLP', weight: 25, source: 'NLP pipeline on news feeds' },
+    { name: 'Financial Ratios', weight: 35, source: 'Quarterly financials + estimates' },
+    { name: 'Manual Adjustments', weight: 10, source: 'Analyst input' }
+  ];
+
+  const scoreLog = [
+    { time: 'Just now', score: currentScore.score, change: currentScore.score - currentScore.prevScore, reason: 'Live data update' },
+    { time: '5 min ago', score: currentScore.prevScore, change: -1, reason: 'News sentiment shift' },
+    { time: '15 min ago', score: currentScore.prevScore + 1, change: 2, reason: 'Price recovery' },
+    { time: '1 hour ago', score: currentScore.prevScore - 1, change: -3, reason: 'Negative headline' }
+  ];
+
+  const dataSources = [
+    { name: 'Market Data Feed', status: 'Active', latency: '< 1s' },
+    { name: 'News NLP Pipeline', status: 'Active', latency: '~ 5s' },
+    { name: 'Financial Database', status: 'Active', latency: '~ 1h (batch)' },
+    { name: 'Manual Input Portal', status: 'Available', latency: 'N/A' }
+  ];
+
+  return (
+    <div className="space-y-6 fade-in">
+      <h2 className="text-2xl font-bold">{currentCompany.name} - Model & Explainability</h2>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Risk Score Drivers</h3>
+        <div className="space-y-3">
+          {drivers.map(d => (
+            <div key={d.name} className="flex items-center gap-4">
+              <div className="w-40 text-sm">{d.name}</div>
+              <div className="flex-1 h-4 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-accent-500" style={{ width: `${d.weight}%` }}></div>
+              </div>
+              <div className="w-12 text-right text-sm font-bold">{d.weight}%</div>
+              <div className="w-48 text-xs text-gray-500">{d.source}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Recent Score Changes</h3>
+        <div className="space-y-2">
+          {scoreLog.map((log, i) => (
+            <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
+              <span className="text-sm text-gray-400">{log.time}</span>
+              <span className="font-bold">{log.score}</span>
+              <span className={`text-sm ${log.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>{log.change >= 0 ? '+' : ''}{log.change}</span>
+              <span className="text-sm text-gray-300">{log.reason}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">Data Sources</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {dataSources.map(ds => (
+            <div key={ds.name} className="p-3 bg-white/5 rounded-lg flex justify-between items-center">
+              <div>
+                <p className="font-medium text-sm">{ds.name}</p>
+                <p className="text-xs text-gray-500">Latency: {ds.latency}</p>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded ${ds.status === 'Active' ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>{ds.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ PORTFOLIO PAGE ============
+function PortfolioPage() {
+  const ctx = useContext(AppContext);
+  const { navigate, alertsState = {}, riskScores = {} } = ctx;
+
+  const borrowers = Object.values(companies).map(c => ({
+    ...c,
+    score: riskScores[c.id]?.score ?? c.startingRiskScore,
+    lastAlert: (alertsState[c.id] || [])[0]
+  }));
+
+  return (
+    <div className="space-y-6 fade-in">
+      <h2 className="text-2xl font-bold">Portfolio Overview</h2>
+      <p className="text-gray-400">Monitor all borrowers in your portfolio</p>
+
+      <div className="grid grid-cols-2 gap-6">
+        {borrowers.map(b => (
+          <div key={b.id} className="glass rounded-xl p-6 hover:bg-white/5 transition cursor-pointer" onClick={() => navigate(`#/company/${b.id}`)}>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-xl font-bold">{b.name}</h3>
+                <p className="text-sm text-gray-400">{b.sector}</p>
+              </div>
+              <div className="text-right">
+                <p className={`text-3xl font-bold ${b.score >= 70 ? 'text-green-400' : b.score >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>{b.score}</p>
+                <p className="text-xs text-gray-500">Risk Score</p>
+              </div>
+            </div>
+            {b.lastAlert && (
+              <div className="p-3 bg-white/5 rounded-lg">
+                <p className="text-xs text-gray-500">Latest Alert ({formatTime(b.lastAlert.time)})</p>
+                <p className="text-sm font-medium">{b.lastAlert.title}</p>
+              </div>
+            )}
+            <button className="mt-4 w-full py-2 glass glass-hover rounded-lg text-sm">Open Dashboard →</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============ SETTINGS PAGE ============
+function SettingsPage() {
+  const ctx = useContext(AppContext);
+  const { liveFeedActive, setLiveFeedActive, feedSpeed, setFeedSpeed } = ctx;
+  const toast = useContext(ToastContext);
+  const [notifications, setNotifications] = useState(true);
+  const [speechEnabled, setSpeechEnabled] = useState(false);
+
+  return (
+    <div className="space-y-6 fade-in">
+      <h2 className="text-2xl font-bold">Settings</h2>
+
+      <div className="glass rounded-xl p-5 space-y-4">
+        <h3 className="font-semibold">Feed Settings</h3>
+        
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">Live Feed</p>
+            <p className="text-sm text-gray-400">Enable real-time data updates</p>
+          </div>
+          <button onClick={() => setLiveFeedActive(!liveFeedActive)} className={`w-12 h-6 rounded-full transition ${liveFeedActive ? 'bg-accent-500' : 'bg-gray-600'}`}>
+            <span className={`block w-5 h-5 rounded-full bg-white transition transform ${liveFeedActive ? 'translate-x-6' : 'translate-x-0.5'}`}></span>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">Demo Speed</p>
+            <p className="text-sm text-gray-400">Control simulation speed</p>
+          </div>
+          <select value={feedSpeed} onChange={e => setFeedSpeed(parseFloat(e.target.value))} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm">
+            <option value="0.5">0.5x (Slow)</option>
+            <option value="1">1x (Normal)</option>
+            <option value="2">2x (Fast)</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">Notifications</p>
+            <p className="text-sm text-gray-400">Show toast notifications</p>
+          </div>
+          <button onClick={() => setNotifications(!notifications)} className={`w-12 h-6 rounded-full transition ${notifications ? 'bg-accent-500' : 'bg-gray-600'}`}>
+            <span className={`block w-5 h-5 rounded-full bg-white transition transform ${notifications ? 'translate-x-6' : 'translate-x-0.5'}`}></span>
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">Speech Support</p>
+            <p className="text-sm text-gray-400">Enable voice input/output</p>
+          </div>
+          <button onClick={() => setSpeechEnabled(!speechEnabled)} className={`w-12 h-6 rounded-full transition ${speechEnabled ? 'bg-accent-500' : 'bg-gray-600'}`}>
+            <span className={`block w-5 h-5 rounded-full bg-white transition transform ${speechEnabled ? 'translate-x-6' : 'translate-x-0.5'}`}></span>
+          </button>
+        </div>
+      </div>
+
+      <div className="glass rounded-xl p-5">
+        <h3 className="font-semibold mb-4">About</h3>
+        <p className="text-sm text-gray-400">RiskAlert AI - Early Warning System Dashboard</p>
+        <p className="text-sm text-gray-400 mt-2">This is a demonstration dashboard with simulated data. No real financial data is used.</p>
+        <p className="text-sm text-gray-500 mt-2">Version 1.0.0 | Built with React 18, Tailwind CSS, Chart.js</p>
+      </div>
+
+      <button onClick={() => toast('Settings saved', 'success')} className="px-6 py-2 bg-accent-500 hover:bg-accent-600 rounded-lg font-medium">Save Settings</button>
+    </div>
+  );
+}
+
+// ============ RENDER ============
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
